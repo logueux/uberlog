@@ -115,6 +115,13 @@
   .panneau { border-top: 1px dashed var(--bord); padding-top: 10px; display: grid; gap: 8px; }
   .vide { color: var(--doux); padding: 20px 4px; text-align: center; border: 1px dashed var(--bord); border-radius: 6px; }
 
+  /* Lecteur de QR code */
+  #lecteur { position: fixed; inset: 0; z-index: 30; background: #000; display: grid; grid-template-rows: 1fr auto; }
+  #lecteur video { width: 100%; height: 100%; object-fit: cover; }
+  #lecteur .cadre { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  #lecteur .cadre i { width: min(70vw, 300px); aspect-ratio: 1; border: 3px solid var(--kaki); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+  #lecteur .bas { padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 8px; background: var(--fond); }
+
   /* TC1 : accueil en tuiles */
   .nouvelle { min-height: 64px; font-size: 20px; letter-spacing: .14em; }
   .tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-items: start; }
@@ -179,6 +186,7 @@
 <div id="bandeau" aria-live="assertive"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
@@ -514,9 +522,45 @@ function ecranAcces() {
       <div class="champ"><label for="c-code">Code d'accès</label><input id="c-code" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
       <p class="erreur" id="erreur" role="alert"></p>
       <button type="submit" class="plein envoyer">Entrer</button>
+      <button type="button" class="plein" id="c-scanner">Scanner un QR code</button>
       <button type="button" id="c-nouveau">Créer un nouveau réseau (TC2)</button>
       <p class="note" id="c-alerte" hidden><b>Attention :</b> un nouveau code crée un réseau vide, séparé de l'ancien. Les compagnies qui ont déjà un QR code ne te verront plus. Si un réseau existe déjà, scanne plutôt le QR code TC2 affiché sur un de leurs téléphones. Touche Entrer pour confirmer.</p>
     </form></section>`;
+}
+// Lecteur de QR code intégré (utile dans l'appli Android, où l'appareil photo ouvre le navigateur)
+async function scanner() {
+  const err = $("#erreur");
+  if (!navigator.mediaDevices?.getUserMedia || typeof jsQR !== "function") { err.textContent = "Lecteur indisponible ici : scanne le QR code avec l'appareil photo, ou saisis le code."; return; }
+  let flux;
+  try { flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false }); }
+  catch { err.textContent = "Accès à la caméra refusé. Autorise la caméra pour UBERLOG dans les réglages du téléphone."; return; }
+  const ecran = document.createElement("div"); ecran.id = "lecteur";
+  ecran.innerHTML = `<video playsinline muted></video><div class="cadre"><i></i></div>
+    <div class="bas"><p class="note" id="l-info">Vise le QR code d'un poste.</p><button type="button" id="l-fermer">Fermer</button></div>`;
+  document.body.append(ecran);
+  const video = ecran.querySelector("video"); video.srcObject = flux; await video.play().catch(() => {});
+  const c = document.createElement("canvas"), ctx = c.getContext("2d", { willReadFrequently: true });
+  let fini = false;
+  const fermer = () => { fini = true; flux.getTracks().forEach(t => t.stop()); ecran.remove(); };
+  ecran.querySelector("#l-fermer").onclick = fermer;
+  const lire = () => {
+    if (fini) return;
+    if (video.videoWidth) {
+      const w = 480, h = Math.round(video.videoHeight * w / video.videoWidth); c.width = w; c.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const r = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+      if (r?.data) {
+        try {
+          const u = new URL(r.data), k = u.searchParams.get("k"), pp = u.searchParams.get("p") || u.hash.slice(1);
+          if (k) { fermer(); code = k.trim().toUpperCase(); local.ecrire("code", code); brancherBase();
+                   history.replaceState(null, "", location.pathname + location.search + (pp ? "#" + pp : "")); ouvrir(); return; }
+        } catch {}
+        ecran.querySelector("#l-info").textContent = "Ce QR code n'est pas un code UBERLOG.";
+      }
+    }
+    requestAnimationFrame(lire);
+  };
+  lire();
 }
 function nouveauCode() {
   const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", v = new Uint32Array(20); crypto.getRandomValues(v);
@@ -527,6 +571,7 @@ function brancherAcces() {
   f.onsubmit = e => { e.preventDefault(); const v = $("#c-code").value.trim().toUpperCase();
     if (v.replace(/-/g, "").length < 16) return $("#erreur").textContent = "Code trop court : 20 caractères attendus.";
     code = v; local.ecrire("code", code); brancherBase(); ouvrir(); };
+  $("#c-scanner").onclick = scanner;
   $("#c-nouveau").onclick = () => { $("#c-code").value = nouveauCode(); $("#c-alerte").hidden = false; };
 }
 

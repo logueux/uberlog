@@ -1,0 +1,9 @@
+{
+  "name": "uberlog-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enveloppe Android d'UBERLOG (Capacitor) : charge l'appli en ligne",
+  "scripts": { "sync": "cap sync android" },
+  "dependencies": { "@capacitor/android": "8.6.2", "@capacitor/core": "8.6.2" },
+  "devDependencies": { "@capacitor/cli": "8.6.2" }
+}

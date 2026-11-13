@@ -1,0 +1,11 @@
+{
+  "appId": "fr.logueux.uberlog",
+  "appName": "UBERLOG",
+  "webDir": "www",
+  "server": {
+    "url": "https://logueux.github.io/uberlog/",
+    "androidScheme": "https",
+    "errorPath": "hors-ligne.html"
+  },
+  "android": { "backgroundColor": "#101409" }
+}

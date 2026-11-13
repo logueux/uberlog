@@ -1,5 +1,5 @@
 // UBERLOG : cache hors réseau. Changer VERSION à chaque mise en ligne.
-const VERSION = "uberlog-v4";
+const VERSION = "uberlog-v5";
 const COQUILLE = ["./", "./index.html", "./manifest.webmanifest", "./icones/icone-192.png", "./icones/icone-512.png", "./icones/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
