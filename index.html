@@ -423,7 +423,7 @@ function tuile(d, avecUnite) {
     <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
       <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
       <span class="etat">${d._attente ? "Non transmise" : STATUTS[d.statut] || ""}</span>
-      <span class="resume">${esc(resume(d))}</span>
+      <span class="resume">${esc(d.statut === "REFUSEE" && dernier?.commentaire ? "Motif : " + dernier.commentaire : resume(d))}</span>
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
     </button>
     ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}
@@ -440,6 +440,7 @@ function actions(d) {
   if (poste !== "tc2") {
     if (d.statut === "EMISE") return `<div class="actions">${b("ANNULER", "Annuler", "ko")}</div>`;
     if (d.statut === "EN_ROUTE") return `<div class="actions">${b("RECU", "Reçu", "ok")}</div>`;
+    if (d.statut === "REFUSEE" && !d.lu_tc1) return `<div class="actions">${b("LU", "Lu", "plein")}</div>`;
     return "";
   }
   if (panneau?.id === d.id) return panneau.mode === "REF" ? panneauRefus(d) : panneauModif(d);
@@ -482,7 +483,8 @@ function rafraichir() {
     if (filtreTc2 === "FINIES") tab.reverse();
   } else {
     // TC1 : les demandes terminées (livrées, refusées, annulées) disparaissent ; elles restent dans les archives du TC2
-    tab = tab.filter(d => d.cie === poste && !FINIS.includes(d.statut)).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
+    // une demande refusée reste affichée jusqu'à ce que le TC1 touche « Lu »
+    tab = tab.filter(d => d.cie === poste && (!FINIS.includes(d.statut) || (d.statut === "REFUSEE" && !d.lu_tc1))).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
   const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
   // TC2 : demandes regroupées par unité, en carrés colorés comme côté TC1
@@ -776,6 +778,7 @@ document.addEventListener("click", async e => {
   if (act === "DEPART") return transition(d, "EN_ROUTE");
   if (act === "LIVRE" || act === "RECU") return transition(d, "LIVREE");
   if (act === "ANNULER") return transition(d, "ANNULEE");
+  if (act === "LU") { const { _attente, ...doc } = d; return ecrire({ ...doc, lu_tc1: true }); }
 });
 
 addEventListener("hashchange", ouvrir);
