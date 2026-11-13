@@ -1,0 +1,15 @@
+{
+  "name": "UBERLOG",
+  "short_name": "UBERLOG",
+  "description": "Demandes RAV, MEC et SAN des compagnies au TC2.",
+  "lang": "fr",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101409",
+  "theme_color": "#2b3419",
+  "icons": [
+    { "src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icones/icone-masque-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

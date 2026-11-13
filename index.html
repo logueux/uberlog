@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2b3419">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="UBERLOG">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+<link rel="icon" href="icones/icone-192.png">
+<title>UBERLOG</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap">
+<style>
+  html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  body { margin: 0; }
+  [hidden] { display: none !important; }
+  /* Layout : écran de poste unique, gros boutons au pouce, bandeau d'état fixe en haut. Thème sombre unique (discipline lumineuse de nuit). */
+  :root {
+    --fond: #101409; --carte: #1a2012; --champ: #0c0f07; --texte: #e8ecdc; --doux: #9aa38a; --bord: #343d26;
+    --kaki: #a7b86a; --kaki-fonce: #2b3419;
+    --neutre: #c9cfbb; --jaune: #f2d43d; --orange: #f08a24; --vert: #4fc163; --rouge: #ef4b3f;
+    --f-titre: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --f-code: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--fond); color: var(--texte); font: 500 16px/1.4 var(--f-titre); -webkit-tap-highlight-color: transparent; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--kaki-fonce); }
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--kaki-fonce); border-bottom: 2px solid var(--kaki);
+           padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .barre { max-width: 1000px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  h1 { font: 700 18px/1 var(--f-titre); letter-spacing: .14em; margin: 0; color: var(--kaki); }
+  #poste { font: 700 18px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: inherit; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #etat { margin-left: auto; font: 600 12px/1 var(--f-code); letter-spacing: .04em; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #etat::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--doux); }
+  #etat.ok::before { background: var(--vert); }
+  #etat.ko { color: var(--rouge); }
+  #etat.ko::before { background: var(--rouge); }
+  .icone { background: transparent; border: 1px solid var(--kaki); color: var(--kaki); padding: 6px 10px; font-size: 13px; letter-spacing: .06em; }
+
+  main { max-width: 1000px; margin: 0 auto; display: grid; gap: 14px; align-content: start;
+         padding-block: 14px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  @media (min-width: 860px) { main.tc1 { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; } }
+  section { min-width: 0; display: grid; gap: 10px; align-content: start; }
+  h2 { font: 700 13px/1 var(--f-titre); letter-spacing: .16em; text-transform: uppercase; color: var(--doux); margin: 4px 0 0; }
+
+  button { font: 700 15px/1.1 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; color: var(--texte); background: var(--carte);
+           border: 1px solid var(--bord); border-radius: 6px; padding: 12px 14px; cursor: pointer; min-height: 44px; }
+  button:active { transform: translateY(1px); }
+  button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--kaki); outline-offset: 2px; }
+  button.plein { background: var(--kaki); color: #11160a; border-color: var(--kaki); }
+  button.ok { background: var(--vert); color: #08160b; border-color: var(--vert); }
+  button.ko { background: transparent; color: var(--rouge); border-color: var(--rouge); }
+  button.mod { background: transparent; color: var(--jaune); border-color: var(--jaune); }
+  button.choisi { background: var(--kaki); color: #11160a; border-color: var(--kaki); }
+  input { font: 600 17px/1.2 var(--f-titre); color: var(--texte); background: var(--champ); border: 1px solid var(--bord); border-radius: 6px; padding: 10px; width: 100%; min-width: 0; }
+  input.code { font-family: var(--f-code); font-size: 15px; text-transform: uppercase; }
+  input[type=number] { font-family: var(--f-code); text-align: right; }
+  label { font-size: 13px; color: var(--doux); letter-spacing: .04em; }
+
+  /* Sélection du poste */
+  .postes { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .postes button { min-height: 76px; font-size: 22px; letter-spacing: .12em; }
+  .postes .tc2 { grid-column: 1 / -1; background: var(--kaki-fonce); border-color: var(--kaki); color: var(--kaki); }
+  .note { color: var(--doux); font-size: 14px; max-width: 60ch; }
+
+  /* TC1 */
+  .gros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .gros button { min-height: 92px; font-size: 26px; letter-spacing: .14em; display: grid; gap: 4px; place-content: center; }
+  .gros button small { font-size: 11px; letter-spacing: .08em; color: var(--doux); font-weight: 600; }
+  .gros button.choisi small { color: #2b3419; }
+  .fiche { background: var(--carte); border: 1px solid var(--bord); border-radius: 8px; padding: 12px; display: grid; gap: 12px; }
+  .grille { display: grid; gap: 6px; }
+  .article { display: grid; grid-template-columns: 34px minmax(0, 1fr) 104px; gap: 8px; align-items: center; }
+  .classe { font: 600 12px/1 var(--f-code); color: var(--doux); }
+  .unite { font-size: 12px; color: var(--doux); }
+  .puces { display: flex; gap: 6px; flex-wrap: wrap; }
+  .puces button { padding: 9px 12px; font-size: 14px; min-height: 40px; }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .champ { display: grid; gap: 4px; min-width: 0; }
+  .erreur { color: var(--rouge); font-size: 14px; margin: 0; min-height: 1em; }
+  .envoyer { min-height: 60px; font-size: 20px; letter-spacing: .14em; }
+
+  /* Cartes de demande, bande de couleur = statut */
+  .liste { display: grid; gap: 10px; }
+  .demande { --c: var(--neutre); background: var(--carte); border: 1px solid var(--bord); border-left: 8px solid var(--c); border-radius: 6px; padding: 10px 12px; display: grid; gap: 6px; min-width: 0; }
+  .demande.PREPARATION { --c: var(--jaune); } .demande.EN_ROUTE { --c: var(--orange); }
+  .demande.LIVREE { --c: var(--vert); } .demande.REFUSEE { --c: var(--rouge); } .demande.ANNULEE { --c: var(--bord); opacity: .6; }
+  .entete { display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+  .type { font: 700 20px/1 var(--f-titre); letter-spacing: .1em; }
+  .qui { font: 700 15px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); }
+  .statut { font: 700 12px/1 var(--f-titre); letter-spacing: .1em; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; background: var(--c); color: #0d1108; }
+  .demande.EMISE .statut { background: transparent; color: var(--neutre); border: 1px solid var(--neutre); }
+  .prio { font: 700 12px/1 var(--f-titre); letter-spacing: .1em; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--rouge); color: var(--rouge); }
+  .prio.PRIORITAIRE { border-color: var(--orange); color: var(--orange); }
+  .heure { margin-left: auto; font: 600 13px/1 var(--f-code); color: var(--doux); font-variant-numeric: tabular-nums; }
+  .contenu { font-size: 16px; }
+  .contenu .n { font-family: var(--f-code); font-variant-numeric: tabular-nums; }
+  .contenu s { color: var(--doux); }
+  .plot { font-size: 15px; } .plot .code { font-family: var(--f-code); font-size: 14px; }
+  .doux { color: var(--doux); font-size: 14px; }
+  .attente { color: var(--jaune); font: 700 12px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; }
+  .actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+  .panneau { border-top: 1px dashed var(--bord); padding-top: 10px; display: grid; gap: 8px; }
+  .vide { color: var(--doux); padding: 20px 4px; text-align: center; border: 1px dashed var(--bord); border-radius: 6px; }
+
+  /* TC2 */
+  .compteurs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .compteurs button { padding: 8px 4px; display: grid; gap: 2px; text-align: center; min-height: 58px; }
+  .compteurs b { font: 700 22px/1 var(--f-code); font-variant-numeric: tabular-nums; }
+  .compteurs span { font-size: 11px; letter-spacing: .08em; color: var(--doux); }
+  .compteurs .c-EMISE b { color: var(--neutre); } .compteurs .c-PREPARATION b { color: var(--jaune); }
+  .compteurs .c-EN_ROUTE b { color: var(--orange); } .compteurs .c-FINIES b { color: var(--vert); }
+  .compteurs button.choisi { background: var(--kaki-fonce); border-color: var(--kaki); }
+  .compteurs button.choisi span { color: var(--texte); }
+
+  /* Partage */
+  .qr-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .qr { background: var(--carte); border: 1px solid var(--bord); border-radius: 8px; padding: 10px; display: grid; gap: 8px; justify-items: center; text-align: center; }
+  .qr canvas { width: 100%; max-width: 180px; height: auto; image-rendering: pixelated; border-radius: 4px; }
+  .qr b { font-size: 16px; letter-spacing: .12em; text-transform: uppercase; }
+  .qr button { padding: 6px 10px; min-height: 34px; font-size: 12px; }
+  .legende { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--doux); }
+  .legende i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  @media (max-width: 440px) { h1 { display: none; } }
+  @media (max-width: 380px) { .gros button { font-size: 22px; min-height: 80px; } .article { grid-template-columns: 30px minmax(0, 1fr) 88px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="barre">
+    <h1>UBERLOG</h1>
+    <a id="poste" href="#postes">—</a>
+    <span id="etat">CONNEXION</span>
+    <button class="icone" id="btn-partage" type="button">QR</button>
+  </div>
+</header>
+<main id="principal"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+"use strict";
+// Configuration du projet Firebase (identifiants publics, à coller depuis la console Firebase)
+const FIREBASE = {
+  apiKey: "AIzaSyCbWiCAHZ5MeK4zooZQ4SdCvBolaWNSkds",
+  authDomain: "uberlog-1aa18.firebaseapp.com",
+  projectId: "uberlog-1aa18",
+  appId: "1:707324663426:web:8c82f212f79053ff57c69b",
+};
+const LIEN = location.origin + location.pathname;
+const CIES = ["bleu", "furieux", "jonquille", "vert", "noir"];
+const NOM = { bleu: "Bleu", furieux: "Furieux", jonquille: "Jonquille", vert: "Vert", noir: "Noir" };
+const TYPES = { RAV: "Ravitaillement", MEC: "Mécanique", SAN: "Sanitaire" };
+const STATUTS = { EMISE: "Émise", PREPARATION: "En préparation", EN_ROUTE: "En livraison", LIVREE: "Livrée", REFUSEE: "Refusée", ANNULEE: "Annulée" };
+const FINIS = ["LIVREE", "REFUSEE", "ANNULEE"];
+const RANG = { URGENTE: 0, PRIORITAIRE: 1, ROUTINE: 2 };
+const ARTICLES = [
+  { k: "rations", classe: "I", nom: "Rations", unite: "jours" },
+  { k: "eau", classe: "I", nom: "Eau", unite: "L" },
+  { k: "gazole", classe: "III", nom: "Gazole", unite: "L" },
+  { k: "m556", classe: "V", nom: "Mun. 5,56", unite: "cart." },
+  { k: "m762", classe: "V", nom: "Mun. 7,62", unite: "cart." },
+  { k: "piles", classe: "II", nom: "Piles / batteries", unite: "u" },
+];
+const MATERIELS = ["VAB", "VBCI", "Griffon", "Serval", "PVP", "VLTT"];
+const MOTIFS = ["Stock épuisé", "Moyens indisponibles", "Plot impossible", "Hors délai"];
+const CRENEAUX = [["", "Dès que possible"], [60, "H+1"], [120, "H+2"], [240, "H+4"]];
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hm = iso => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); };
+const jhm = iso => { if (!iso) return ""; const d = new Date(iso); if (isNaN(d)) return "";
+  const auj = new Date().toDateString() === d.toDateString(); return (auj ? "" : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " ") + hm(iso); };
+const nouvelId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// ---------- Données : Firestore (file hors liaison et cache intégrés) ----------
+const local = {
+  lire(k, d) { try { const v = localStorage.getItem("uberlog." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  ecrire(k, v) { try { localStorage.setItem("uberlog." + k, JSON.stringify(v)); } catch {} },
+};
+const parametres = new URLSearchParams(location.search);
+if (parametres.get("k")) local.ecrire("code", parametres.get("k").trim().toUpperCase());
+if (parametres.get("p") && !location.hash) history.replaceState(null, "", location.pathname + location.search + "#" + parametres.get("p"));
+// L'adresse porte le code et le poste : l'icône posée sur l'écran d'accueil les reprend
+function majAdresse() {
+  const q = new URLSearchParams(); const c = local.lire("code", ""), p = location.hash.slice(1);
+  if (c) q.set("k", c); if (p) q.set("p", p);
+  const s = q.toString(); history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + location.hash);
+}
+let code = local.lire("code", "");
+let collection = null, demandes = {}, attente = new Set(), liaison = "connexion", desabonner = null;
+const configOk = FIREBASE.apiKey && FIREBASE.apiKey !== "A_REMPLACER" && FIREBASE.projectId;
+let fs = null;
+if (configOk && window.firebase) {
+  firebase.initializeApp(FIREBASE);
+  fs = firebase.firestore();
+  fs.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+}
+function tout() { return Object.fromEntries(Object.entries(demandes).map(([k, v]) => [k, attente.has(k) ? { ...v, _attente: true } : v])); }
+function majEtat() {
+  const n = attente.size, el = $("#etat");
+  el.textContent = ({ connexion: "CONNEXION", ok: "LIAISON OK", ko: "HORS LIAISON", absent: "SANS BASE" })[liaison] + (n ? ` · ${n} EN ATTENTE` : "");
+  el.className = liaison === "ok" ? "ok" : liaison === "connexion" ? "" : "ko";
+}
+function brancherBase() {
+  if (desabonner) { desabonner(); desabonner = null; }
+  demandes = {}; attente = new Set(); collection = null;
+  if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
+  collection = fs.collection("postes").doc(code).collection("demandes");
+  liaison = "connexion"; majEtat();
+  desabonner = collection.onSnapshot({ includeMetadataChanges: true }, snap => {
+    demandes = {}; attente = new Set();
+    snap.forEach(d => { demandes[d.id] = d.data(); if (d.metadata.hasPendingWrites) attente.add(d.id); });
+    liaison = snap.metadata.fromCache ? "ko" : "ok";
+    majEtat(); rafraichir();
+  }, e => { liaison = "absent"; majEtat(); alerte(e?.code === "permission-denied" ? "Accès refusé par la base : vérifier le code." : "Base injoignable."); rafraichir(); });
+}
+addEventListener("offline", () => { liaison = "ko"; majEtat(); });
+async function ecrire(doc) {
+  if (!collection) return alerte("Base non configurée.");
+  try { await collection.doc(doc.id).set(doc); }
+  catch (e) { alerte(e?.code === "permission-denied" ? "Envoi refusé par la base : vérifier le code d'accès." : "Envoi impossible : " + (e?.message || e)); }
+}
+function alerte(msg) { const e = $("#erreur") || $("#alerte"); if (e) e.textContent = msg; }
+
+function transition(d, statut, extra = {}) {
+  const doc = structuredClone({ ...d }); delete doc._attente;
+  Object.assign(doc, extra, { statut, maj_le: new Date().toISOString() });
+  doc.historique = [...(doc.historique || []), { statut, le: doc.maj_le, par: poste === "tc2" ? "TC2" : NOM[poste], commentaire: extra.motif || "" }];
+  ecrire(doc);
+}
+
+// ---------- Rendu d'une demande ----------
+function contenu(d, m) {
+  if (d.type === "RAV") return (d.lignes || []).map((l, i) => {
+    const q2 = m?.lignes?.[i]?.quantite; const change = q2 != null && q2 !== l.quantite;
+    return `<div>${esc(l.nom)} <span class="n">${change ? `<s>${l.quantite}</s> ${q2}` : l.quantite}</span> ${esc(l.unite)}</div>`; }).join("");
+  if (d.type === "MEC") return `<div><b>${esc(d.mec?.materiel)}</b>${d.mec?.immobilise ? " · IMMOBILISÉ" : ""}</div>${d.mec?.detail ? `<div class="doux">${esc(d.mec.detail)}</div>` : ""}`;
+  const s = d.san || {};
+  return `<div>${s.ua ? `UA <span class="n">${s.ua}</span> · ` : ""}${s.ur ? `UR <span class="n">${s.ur}</span> · ` : ""}${s.evasan ? "ÉVASAN" : "Ravitaillement sanitaire"}</div>${s.detail ? `<div class="doux">${esc(s.detail)}</div>` : ""}`;
+}
+const creneauTxt = c => c ? jhm(c) : "Dès que possible";
+function carte(d) {
+  const m = d.modif;
+  const plot = m?.plot ? `<div class="plot"><b>Plot TC2 :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
+      <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
+    : `<div class="plot">${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
+  const dernier = (d.historique || []).at(-1);
+  return `<article class="demande ${esc(d.statut)}">
+    <div class="entete"><span class="type">${esc(d.type)}</span>
+      ${poste === "tc2" ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}
+      <span class="statut">${STATUTS[d.statut] || ""}</span>
+      ${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${esc(d.priorite)}</span>` : ""}
+      ${d._attente ? `<span class="attente">Non transmise</span>` : ""}
+      <span class="heure">${jhm(d.cree_le)}</span></div>
+    <div class="contenu">${contenu(d, m)}</div>${plot}
+    ${d.remarques ? `<div class="doux">${esc(d.remarques)}</div>` : ""}
+    ${dernier?.commentaire ? `<div class="doux">« ${esc(dernier.commentaire)} » · ${esc(dernier.par)} ${hm(dernier.le)}</div>` : ""}
+    ${actions(d)}</article>`;
+}
+
+let panneau = null; // { id, mode: "MOD" | "REF" }
+function actions(d) {
+  if (d._attente) return "";
+  const b = (act, txt, cls) => `<button type="button" class="${cls}" data-act="${act}" data-id="${esc(d.id)}">${txt}</button>`;
+  if (poste !== "tc2") {
+    if (d.statut === "EMISE") return `<div class="actions">${b("ANNULER", "Annuler", "ko")}</div>`;
+    if (d.statut === "EN_ROUTE") return `<div class="actions">${b("RECU", "Reçu", "ok")}</div>`;
+    return "";
+  }
+  if (panneau?.id === d.id) return panneau.mode === "REF" ? panneauRefus(d) : panneauModif(d);
+  return ({
+    EMISE: `<div class="actions">${b("ACCEPTER", "Accepter", "ok")}${b("MODIFIER", "Modifier", "mod")}${b("REFUSER", "Refuser", "ko")}</div>`,
+    PREPARATION: `<div class="actions">${b("DEPART", "Départ convoi", "plein")}</div>`,
+    EN_ROUTE: `<div class="actions">${b("LIVRE", "Livrée", "ok")}</div>`,
+  })[d.statut] || "";
+}
+function panneauRefus(d) {
+  return `<div class="panneau"><label>Motif du refus</label>
+    <div class="puces">${MOTIFS.map(mo => `<button type="button" data-act="MOTIF" data-id="${esc(d.id)}" data-v="${esc(mo)}">${esc(mo)}</button>`).join("")}</div>
+    <div class="actions"><button type="button" data-act="FERMER">Retour</button></div></div>`;
+}
+function panneauModif(d) {
+  const lignes = d.type === "RAV" ? (d.lignes || []).map((l, i) => `<div class="article"><span class="classe">${esc(l.classe)}</span><span>${esc(l.nom)} <span class="unite">${esc(l.unite)}</span></span>
+      <input type="number" inputmode="decimal" min="0" id="m-q${i}" value="${l.quantite}" aria-label="Quantité ${esc(l.nom)}"></div>`).join("") : "";
+  return `<div class="panneau">${lignes ? `<div class="grille">${lignes}</div>` : ""}
+    <div class="duo"><div class="champ"><label for="m-plot">Plot</label><input id="m-plot" value="${esc(d.plot?.nom)}"></div>
+      <div class="champ"><label for="m-coord">Coordonnées</label><input id="m-coord" class="code" value="${esc(d.plot?.coordonnees)}"></div></div>
+    <div class="champ"><label>Créneau</label><div class="puces" id="m-creneau">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join("")}</div></div>
+    <div class="actions"><button type="button" data-act="FERMER">Retour</button><button type="button" class="ok" data-act="VALIDER_MODIF" data-id="${esc(d.id)}">Accepter modifiée</button></div></div>`;
+}
+const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000).toISOString();
+
+// ---------- Écrans ----------
+let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "";
+function rafraichir() {
+  const liste = $("#liste"); if (!liste) return;
+  if (panneau && liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  let tab = Object.values(tout());
+  if (poste === "tc2") {
+    const actives = tab.filter(d => !FINIS.includes(d.statut));
+    const n = s => actives.filter(d => d.statut === s).length;
+    const finiesJour = tab.filter(d => FINIS.includes(d.statut) && new Date(d.maj_le || d.cree_le).toDateString() === new Date().toDateString()).length;
+    $("#compteurs").innerHTML = [["EMISE", "À traiter", n("EMISE")], ["PREPARATION", "Prépa", n("PREPARATION")], ["EN_ROUTE", "En route", n("EN_ROUTE")], ["FINIES", "Finies jour", finiesJour]]
+      .map(([k, t, v]) => `<button type="button" class="c-${k} ${filtreTc2 === k ? "choisi" : ""}" data-filtre="${k}"><b>${v}</b><span>${t}</span></button>`).join("");
+    tab = filtreTc2 === "ACTIFS" ? actives : filtreTc2 === "FINIES" ? tab.filter(d => FINIS.includes(d.statut)) : tab.filter(d => d.statut === filtreTc2);
+    tab.sort((a, b) => (RANG[a.priorite] ?? 3) - (RANG[b.priorite] ?? 3) || String(a.cree_le).localeCompare(String(b.cree_le)));
+    if (filtreTc2 === "FINIES") tab.reverse();
+  } else {
+    tab = tab.filter(d => d.cie === poste).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
+  }
+  liste.innerHTML = tab.map(carte).join("") || `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Choisis RAV, MEC ou SAN ci-dessus."}</p>`;
+}
+
+function ecranPostes() {
+  $("#poste").textContent = "Choix du poste";
+  const dernier = local.lire("poste", "");
+  return `<section><h2>Poste</h2><div class="postes">
+      ${CIES.map(c => `<button type="button" data-poste="${c}" class="${dernier === c ? "choisi" : ""}">${NOM[c]}</button>`).join("")}
+      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-poste="tc2">TC2</button></div>
+    <p class="note">Chaque compagnie (TC1) envoie ses demandes au TC2. Le choix est retenu sur cet appareil.</p>
+    <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--jaune)"></i>Prise en compte, en préparation</span>
+      <span><i style="background:var(--orange)"></i>En cours de livraison</span><span><i style="background:var(--vert)"></i>Reçue et livrée</span><span><i style="background:var(--rouge)"></i>Refusée</span></div></section>`;
+}
+
+function ecranTc1() {
+  $("#poste").textContent = "TC1 · " + NOM[poste];
+  const p = local.lire("plot." + poste, { nom: "", coordonnees: "" });
+  const corps = {
+    RAV: `<div class="grille">${ARTICLES.map(a => `<div class="article"><span class="classe">${a.classe}</span><span>${a.nom} <span class="unite">${a.unite}</span></span>
+            <input type="number" inputmode="decimal" min="0" id="q-${a.k}" placeholder="0" aria-label="${a.nom}"></div>`).join("")}
+          <div class="article"><span class="classe">+</span><input id="q-autre-nom" placeholder="Autre article"><input type="number" inputmode="decimal" min="0" id="q-autre" placeholder="0" aria-label="Quantité autre"></div></div>`,
+    MEC: `<div class="puces" id="materiels">${MATERIELS.map(m => `<button type="button" data-v="${m}">${m}</button>`).join("")}</div>
+          <input id="mec-autre" placeholder="Autre matériel / immatriculation">
+          <div class="puces"><button type="button" id="mec-immo">Immobilisé</button></div>
+          <input id="mec-detail" placeholder="Panne (facultatif)">`,
+    SAN: `<div class="duo"><div class="champ"><label for="san-ua">Blessés UA</label><input type="number" inputmode="numeric" min="0" id="san-ua" placeholder="0"></div>
+            <div class="champ"><label for="san-ur">Blessés UR</label><input type="number" inputmode="numeric" min="0" id="san-ur" placeholder="0"></div></div>
+          <div class="puces"><button type="button" id="san-evasan" class="choisi">Évacuation</button><button type="button" id="san-ravito">Ravitaillement sanitaire</button></div>
+          <input id="san-detail" placeholder="Précisions (facultatif)">`,
+  }[type];
+  return `<section>
+    <div class="gros">${Object.keys(TYPES).map(t => `<button type="button" data-type="${t}" class="${type === t ? "choisi" : ""}">${t}<small>${TYPES[t]}</small></button>`).join("")}</div>
+    <form class="fiche" id="formulaire" novalidate>
+      ${corps}
+      <div class="duo"><div class="champ"><label for="f-plot">Plot</label><input id="f-plot" value="${esc(p.nom)}" placeholder="PLOT ALPHA"></div>
+        <div class="champ"><label for="f-coord">Coordonnées</label><input id="f-coord" class="code" value="${esc(p.coordonnees)}" placeholder="31U DQ 1234 5678"></div></div>
+      <div class="puces" id="creneaux">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}" class="${String(v) === String(creneau) ? "choisi" : ""}">${t}</button>`).join("")}</div>
+      <div class="puces" id="prios">${["ROUTINE", "PRIORITAIRE", "URGENTE"].map(x => `<button type="button" data-v="${x}" class="${prio === x ? "choisi" : ""}">${x}</button>`).join("")}</div>
+      <p class="erreur" id="erreur" role="alert"></p>
+      <button type="submit" class="plein envoyer">Envoyer ${type}</button>
+    </form></section>
+    <section><h2>Mes demandes</h2><div class="liste" id="liste"></div></section>`;
+}
+
+function ecranTc2() {
+  $("#poste").textContent = "TC2";
+  return `<section><div class="compteurs" id="compteurs"></div>
+    <p class="erreur" id="alerte" role="alert"></p>
+    <div class="liste" id="liste"></div></section>`;
+}
+
+function ecranAcces() {
+  $("#poste").textContent = "Accès";
+  if (!configOk) return `<section><h2>Configuration</h2><p class="note">La base Firebase n'est pas encore configurée dans cette page.</p></section>`;
+  return `<section><h2>Code d'accès</h2>
+    <p class="note">Scanne le QR code d'un poste, ou saisis le code d'accès donné par le TC2.</p>
+    <form class="fiche" id="form-code" novalidate>
+      <div class="champ"><label for="c-code">Code d'accès</label><input id="c-code" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+      <p class="erreur" id="erreur" role="alert"></p>
+      <button type="submit" class="plein envoyer">Entrer</button>
+      <button type="button" id="c-nouveau">Créer un nouveau code (TC2)</button>
+    </form></section>`;
+}
+function nouveauCode() {
+  const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", v = new Uint32Array(20); crypto.getRandomValues(v);
+  return [...v].map(x => a[x % a.length]).join("").replace(/(.{5})(?!$)/g, "$1-");
+}
+function brancherAcces() {
+  const f = $("#form-code"); if (!f) return;
+  f.onsubmit = e => { e.preventDefault(); const v = $("#c-code").value.trim().toUpperCase();
+    if (v.replace(/-/g, "").length < 16) return $("#erreur").textContent = "Code trop court : 20 caractères attendus.";
+    code = v; local.ecrire("code", code); brancherBase(); ouvrir(); };
+  $("#c-nouveau").onclick = () => { $("#c-code").value = nouveauCode(); };
+}
+
+function ouvrir() {
+  majAdresse();
+  if (!configOk || !code) { const main = $("#principal"); main.className = ""; main.innerHTML = ecranAcces(); brancherAcces(); return; }
+  const h = location.hash.slice(1);
+  poste = CIES.includes(h) || h === "tc2" ? h : null;
+  if (poste) local.ecrire("poste", poste);
+  panneau = null;
+  const main = $("#principal");
+  main.className = poste === "tc2" ? "tc2" : poste ? "tc1" : "";
+  main.innerHTML = !poste ? ecranPostes() : poste === "tc2" ? ecranTc2() : ecranTc1();
+  if (poste && poste !== "tc2") brancherTc1();
+  rafraichir();
+}
+
+function brancherTc1() {
+  const f = $("#formulaire");
+  const unique = (sel, cb) => $(sel).addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+    $(sel).querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); cb(b.dataset.v); });
+  unique("#creneaux", v => creneau = v);
+  unique("#prios", v => prio = v);
+  if (type === "MEC") {
+    $("#materiels").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+      const deja = b.classList.contains("choisi"); $("#materiels").querySelectorAll("button").forEach(x => x.classList.remove("choisi")); if (!deja) b.classList.add("choisi"); });
+    $("#mec-immo").onclick = e => e.currentTarget.classList.toggle("choisi");
+  }
+  if (type === "SAN") {
+    $("#san-evasan").onclick = () => { $("#san-evasan").classList.add("choisi"); $("#san-ravito").classList.remove("choisi"); };
+    $("#san-ravito").onclick = () => { $("#san-ravito").classList.add("choisi"); $("#san-evasan").classList.remove("choisi"); };
+  }
+  f.onsubmit = e => {
+    e.preventDefault();
+    const err = $("#erreur"); err.textContent = "";
+    const maintenant = new Date().toISOString();
+    const d = { id: nouvelId(), type, cie: poste, priorite: prio, statut: "EMISE", cree_le: maintenant, maj_le: maintenant,
+      creneau: plusMinutes(creneau), plot: { nom: $("#f-plot").value.trim().toUpperCase(), coordonnees: $("#f-coord").value.trim().toUpperCase() },
+      remarques: "", modif: null, historique: [{ statut: "EMISE", le: maintenant, par: NOM[poste], commentaire: "" }] };
+    if (type === "RAV") {
+      d.lignes = ARTICLES.map(a => ({ classe: a.classe, nom: a.nom, unite: a.unite, quantite: Number($("#q-" + a.k).value) })).filter(l => l.quantite > 0);
+      const autre = $("#q-autre-nom").value.trim(), qa = Number($("#q-autre").value);
+      if (autre && qa > 0) d.lignes.push({ classe: "", nom: autre, unite: "", quantite: qa });
+      if (!d.lignes.length) return err.textContent = "Saisir au moins une quantité.";
+    } else if (type === "MEC") {
+      const choisi = $("#materiels .choisi")?.dataset.v || "", autre = $("#mec-autre").value.trim();
+      d.mec = { materiel: [choisi, autre].filter(Boolean).join(" "), immobilise: $("#mec-immo").classList.contains("choisi"), detail: $("#mec-detail").value.trim() };
+      if (!d.mec.materiel) return err.textContent = "Choisir le matériel.";
+    } else {
+      d.san = { ua: Number($("#san-ua").value) || 0, ur: Number($("#san-ur").value) || 0, evasan: $("#san-evasan").classList.contains("choisi"), detail: $("#san-detail").value.trim() };
+      if (d.san.evasan && !d.san.ua && !d.san.ur) return err.textContent = "Indiquer le nombre de blessés.";
+      if (!d.san.evasan && !d.san.detail) return err.textContent = "Préciser le besoin sanitaire.";
+      if (d.san.ua) d.priorite = "URGENTE";
+    }
+    if (!d.plot.nom && !d.plot.coordonnees) return err.textContent = "Indiquer le plot.";
+    local.ecrire("plot." + poste, d.plot);
+    prio = "ROUTINE"; creneau = "";
+    ouvrir();
+    ecrire(d);
+  };
+}
+
+// ---------- Partage par QR code ----------
+function dessinerQr(canvas, texte) {
+  if (typeof qrcode !== "function") return false;
+  const qr = qrcode(0, "M"); qr.addData(texte); qr.make();
+  const n = qr.getModuleCount(), m = 2, t = 6, c = canvas.getContext("2d");
+  canvas.width = canvas.height = (n + 2 * m) * t;
+  c.fillStyle = "#fff"; c.fillRect(0, 0, canvas.width, canvas.height); c.fillStyle = "#000";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) c.fillRect((x + m) * t, (y + m) * t, t, t);
+  return true;
+}
+function ecranPartage() {
+  $("#poste").textContent = "Partage";
+  const main = $("#principal"); main.className = "";
+  const cibles = [["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
+  main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
+    <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Il contient le code d'accès <b class="code">${esc(code)}</b> : ne le montre qu'aux tiens. Si un code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
+    <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr"><canvas data-qr="${k}" aria-label="QR code ${t}"></canvas><b>${t}</b>
+      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button></div>`).join("")}</div>
+    <p class="note" id="qr-erreur"></p>
+    <div class="actions"><button type="button" data-poste="${esc(local.lire("poste", "") || "")}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div></section>`;
+  let ok = true;
+  main.querySelectorAll("canvas[data-qr]").forEach(cv => ok = dessinerQr(cv, `${LIEN}?k=${encodeURIComponent(code)}&p=${cv.dataset.qr}`) && ok);
+  if (!ok) $("#qr-erreur").textContent = "Les QR codes n'ont pas pu se charger. Utilise « Copier le lien ».";
+}
+
+// ---------- Clics ----------
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button, a"); if (!b) return;
+  if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
+  if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
+  if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
+  if (b.dataset.poste !== undefined) { if (b.dataset.poste) { if (location.hash === "#" + b.dataset.poste) ouvrir(); else location.hash = b.dataset.poste; } else ouvrir(); return; }
+  if (b.dataset.copie) { try { await navigator.clipboard.writeText(b.dataset.copie); b.textContent = "Copié"; } catch { b.textContent = b.dataset.copie; } return; }
+  if (b.dataset.type) { type = b.dataset.type; ouvrir(); return; }
+  if (b.dataset.filtre) { filtreTc2 = filtreTc2 === b.dataset.filtre ? "ACTIFS" : b.dataset.filtre; rafraichir(); return; }
+  if (b.closest("#m-creneau")) { $("#m-creneau").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); return; }
+  const act = b.dataset.act; if (!act) return;
+  const d = tout()[b.dataset.id];
+  if (act === "FERMER") { panneau = null; b.blur(); return rafraichir(); }
+  if (!d) return;
+  if (act === "ACCEPTER") return transition(d, "PREPARATION");
+  if (act === "MODIFIER" || act === "REFUSER") { panneau = { id: d.id, mode: act === "REFUSER" ? "REF" : "MOD" }; b.blur(); return rafraichir(); }
+  if (act === "MOTIF") { panneau = null; return transition(d, "REFUSEE", { motif: b.dataset.v }); }
+  if (act === "VALIDER_MODIF") {
+    const ch = $("#m-creneau .choisi");
+    const modif = { plot: { nom: $("#m-plot").value.trim().toUpperCase(), coordonnees: $("#m-coord").value.trim().toUpperCase() },
+      creneau: ch ? plusMinutes(ch.dataset.v) : (d.creneau || "") };
+    if (d.type === "RAV") modif.lignes = (d.lignes || []).map((l, i) => ({ quantite: Number($("#m-q" + i).value) || 0 }));
+    panneau = null;
+    return transition(d, "PREPARATION", { modif });
+  }
+  if (act === "DEPART") return transition(d, "EN_ROUTE");
+  if (act === "LIVRE" || act === "RECU") return transition(d, "LIVREE");
+  if (act === "ANNULER") return transition(d, "ANNULEE");
+});
+
+addEventListener("hashchange", ouvrir);
+if (!location.hash) { const p = local.lire("poste", ""); if (p) history.replaceState(null, "", "#" + p); }
+brancherBase(); ouvrir(); majEtat();
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  let rechargee = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
+  navigator.serviceWorker.register("sw.js").then(r => { setInterval(() => r.update().catch(() => {}), 30 * 60000); }).catch(() => {});
+}
+setInterval(() => { if (!panneau) rafraichir(); }, 30000);
+
+</script>
+</body>
+</html>
