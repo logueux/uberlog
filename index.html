@@ -170,7 +170,21 @@
   .qr b { font-size: 16px; letter-spacing: .12em; text-transform: uppercase; }
   .qr button { padding: 6px 10px; min-height: 34px; font-size: 12px; }
   .legende { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--doux); }
-  .legende i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  /* Couleur de fond propre à chaque profil (les carrés restent foncés pour garder le code couleur d'état lisible) */
+  body { --sur: var(--doux); --sur-fort: var(--texte); }
+  body::after { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--fond-profil, var(--fond)); }
+  body[data-profil] { background: transparent; }
+  body[data-profil="bleu"] { --fond-profil: #1f3fae; --sur: #dfe6ff; --sur-fort: #fff; }
+  body[data-profil="furieux"] { --fond-profil: #e9c21b; --sur: #2a2300; --sur-fort: #000; }
+  body[data-profil="jonquille"] { --fond-profil: linear-gradient(to top right, #2f9b45 50%, #e9c21b 50%); --sur: #0e1a06; --sur-fort: #000; }
+  body[data-profil="vert"] { --fond-profil: #2f9b45; --sur: #06180a; --sur-fort: #000; }
+  body[data-profil="noir"] { --fond-profil: #000; }
+  body[data-profil="tc2"] { --fond-profil: #62676c; --sur: #eef0f2; --sur-fort: #fff; }
+  h2, .note, .legende, .vide, .unite-tete span { color: var(--sur); }
+  .unite-tete h3, .barre-form .type { color: var(--sur-fort); }
+  .barre-form small { color: var(--sur); }
+  .vide, .unite-tete { border-color: color-mix(in srgb, var(--sur) 45%, transparent); }
+  .legende i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.55); margin-right: 5px; vertical-align: -1px; }
   @media (max-width: 440px) { h1 { display: none; } }
   @media (max-width: 380px) { .gros button { font-size: 22px; min-height: 80px; } .article { grid-template-columns: 30px minmax(0, 1fr) 88px; } }
 </style>
@@ -603,6 +617,7 @@ function ouvrir() {
   const h = location.hash.slice(1);
   poste = CIES.includes(h) || h === "tc2" ? h : null;
   if (poste) { local.ecrire("poste", poste); if (!verrou) local.ecrire("verrou", poste); majAdresse(); }
+  if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
