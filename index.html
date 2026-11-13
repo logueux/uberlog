@@ -130,6 +130,10 @@
   .tuile.PREPARATION { --c: var(--jaune); } .tuile.EN_ROUTE { --c: var(--orange); } .tuile.LIVREE { --c: var(--vert); }
   .tuile.REFUSEE { --c: var(--rouge); } .tuile.ANNULEE { --c: var(--bord); opacity: .65; }
   .tuile.ouverte { grid-column: 1 / -1; }
+  .unites { display: grid; gap: 16px; }
+  .unite-tete { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; border-bottom: 1px solid var(--bord); padding-bottom: 4px; }
+  .unite-tete h3 { margin: 0; font: 700 16px/1 var(--f-titre); letter-spacing: .1em; text-transform: uppercase; }
+  .unite-tete span { font: 600 12px/1 var(--f-code); color: var(--doux); }
   .tuile-tete { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; padding: 12px; min-height: 112px; align-content: start; }
   .tuile-tete:focus-visible { outline: 2px solid var(--kaki); outline-offset: -2px; }
   .tuile-tete .type { font-size: 24px; }
@@ -398,6 +402,7 @@ function tuile(d) {
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
     </button>
     ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}
+      ${d.remarques ? `<div class="doux">${esc(d.remarques)}</div>` : ""}
       ${dernier?.commentaire ? `<div class="doux">« ${esc(dernier.commentaire)} » · ${esc(dernier.par)} ${hm(dernier.le)}</div>` : ""}
       ${actions(d)}</div>` : ""}
   </article>`;
@@ -454,7 +459,15 @@ function rafraichir() {
     tab = tab.filter(d => d.cie === poste).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
   const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
-  liste.innerHTML = (poste === "tc2" ? tab.map(carte) : tab.map(tuile)).join("") || vide;
+  // TC2 : demandes regroupées par unité, en carrés colorés comme côté TC1
+  liste.innerHTML = (poste === "tc2"
+    ? [...CIES, ...new Set(tab.map(d => d.cie).filter(c => !CIES.includes(c)))].map(c => {
+        const t = tab.filter(d => d.cie === c); if (!t.length) return "";
+        const aTraiter = t.filter(d => d.statut === "EMISE").length;
+        return `<div class="unite"><div class="unite-tete"><h3>${esc(NOM[c] || c)}</h3><span>${t.length} demande${t.length > 1 ? "s" : ""}${aTraiter ? ` · ${aTraiter} à traiter` : ""}</span></div>
+          <div class="tuiles">${t.map(tuile).join("")}</div></div>`;
+      })
+    : tab.map(tuile)).join("") || vide;
 }
 
 function ecranPostes() {
@@ -511,7 +524,7 @@ function ecranTc2() {
   $("#poste").textContent = "TC2";
   return `<section><div class="compteurs" id="compteurs"></div>
     <p class="erreur" id="alerte" role="alert"></p>
-    <div class="liste" id="liste"></div></section>`;
+    <div class="unites" id="liste"></div></section>`;
 }
 
 function ecranAcces() {
