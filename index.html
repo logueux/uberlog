@@ -369,12 +369,13 @@ function ecranAcces() {
   $("#poste").textContent = "Accès";
   if (!configOk) return `<section><h2>Configuration</h2><p class="note">La base Firebase n'est pas encore configurée dans cette page.</p></section>`;
   return `<section><h2>Code d'accès</h2>
-    <p class="note">Scanne le QR code d'un poste, ou saisis le code d'accès donné par le TC2.</p>
+    <p class="note">Scanne le QR code d'un poste avec l'appareil photo, ou saisis le code d'accès du réseau. Un appareil déjà dans le réseau affiche ses QR codes et son code via le bouton QR.</p>
     <form class="fiche" id="form-code" novalidate>
       <div class="champ"><label for="c-code">Code d'accès</label><input id="c-code" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
       <p class="erreur" id="erreur" role="alert"></p>
       <button type="submit" class="plein envoyer">Entrer</button>
-      <button type="button" id="c-nouveau">Créer un nouveau code (TC2)</button>
+      <button type="button" id="c-nouveau">Créer un nouveau réseau (TC2)</button>
+      <p class="note" id="c-alerte" hidden><b>Attention :</b> un nouveau code crée un réseau vide, séparé de l'ancien. Les compagnies qui ont déjà un QR code ne te verront plus. Si un réseau existe déjà, scanne plutôt le QR code TC2 affiché sur un de leurs téléphones. Touche Entrer pour confirmer.</p>
     </form></section>`;
 }
 function nouveauCode() {
@@ -386,7 +387,7 @@ function brancherAcces() {
   f.onsubmit = e => { e.preventDefault(); const v = $("#c-code").value.trim().toUpperCase();
     if (v.replace(/-/g, "").length < 16) return $("#erreur").textContent = "Code trop court : 20 caractères attendus.";
     code = v; local.ecrire("code", code); brancherBase(); ouvrir(); };
-  $("#c-nouveau").onclick = () => { $("#c-code").value = nouveauCode(); };
+  $("#c-nouveau").onclick = () => { $("#c-code").value = nouveauCode(); $("#c-alerte").hidden = false; };
 }
 
 function ouvrir() {
