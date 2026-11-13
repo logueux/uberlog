@@ -38,6 +38,13 @@
   #etat.ok::before { background: var(--vert); }
   #etat.ko { color: var(--rouge); }
   #etat.ko::before { background: var(--rouge); }
+  .icone.actif { background: var(--kaki); color: #11160a; }
+  #bandeau { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; gap: 6px;
+             padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); pointer-events: none; }
+  .alerte { pointer-events: auto; max-width: 560px; margin: 0 auto; width: 100%; background: var(--kaki); color: #11160a; border-radius: 8px; padding: 12px 14px;
+            font: 700 16px/1.25 var(--f-titre); letter-spacing: .04em; box-shadow: 0 6px 24px rgba(0,0,0,.5); cursor: pointer; }
+  .alerte.rouge { background: var(--rouge); color: #fff; } .alerte.orange { background: var(--orange); } .alerte.jaune { background: var(--jaune); } .alerte.vert { background: var(--vert); }
+  @media (prefers-reduced-motion: no-preference) { .alerte { animation: monte .25s ease-out; } @keyframes monte { from { transform: translateY(20px); opacity: 0; } } }
   .icone { background: transparent; border: 1px solid var(--kaki); color: var(--kaki); padding: 6px 10px; font-size: 13px; letter-spacing: .06em; }
 
   main { max-width: 1000px; margin: 0 auto; display: grid; gap: 14px; align-content: start;
@@ -103,6 +110,8 @@
   .doux { color: var(--doux); font-size: 14px; }
   .attente { color: var(--jaune); font: 700 12px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; }
   .actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+  .actions button { min-width: 0; padding-inline: 8px; }
+  .demande > * { min-width: 0; }
   .panneau { border-top: 1px dashed var(--bord); padding-top: 10px; display: grid; gap: 8px; }
   .vide { color: var(--doux); padding: 20px 4px; text-align: center; border: 1px dashed var(--bord); border-radius: 6px; }
 
@@ -162,10 +171,12 @@
     <h1>UBERLOG</h1>
     <a id="poste" href="#postes">—</a>
     <span id="etat">CONNEXION</span>
+    <button class="icone" id="btn-alertes" type="button" aria-label="Activer les alertes">ALERTES</button>
     <button class="icone" id="btn-partage" type="button">QR</button>
   </div>
 </header>
 <main id="principal"></main>
+<div id="bandeau" aria-live="assertive"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -236,13 +247,14 @@ function majEtat() {
 }
 function brancherBase() {
   if (desabonner) { desabonner(); desabonner = null; }
-  demandes = {}; attente = new Set(); collection = null;
+  demandes = {}; attente = new Set(); collection = null; statutsConnus = null;
   if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
   collection = fs.collection("postes").doc(code).collection("demandes");
   liaison = "connexion"; majEtat();
   desabonner = collection.onSnapshot({ includeMetadataChanges: true }, snap => {
     demandes = {}; attente = new Set();
     snap.forEach(d => { demandes[d.id] = d.data(); if (d.metadata.hasPendingWrites) attente.add(d.id); });
+    detecterAlertes();
     liaison = snap.metadata.fromCache ? "ko" : "ok";
     majEtat(); rafraichir();
   }, e => { liaison = "absent"; majEtat(); alerte(e?.code === "permission-denied" ? "Accès refusé par la base : vérifier le code." : "Base injoignable."); rafraichir(); });
@@ -253,6 +265,72 @@ async function ecrire(doc) {
   try { await collection.doc(doc.id).set(doc); }
   catch (e) { alerte(e?.code === "permission-denied" ? "Envoi refusé par la base : vérifier le code d'accès." : "Envoi impossible : " + (e?.message || e)); }
 }
+// ---------- Alertes : son, vibration, notification, bandeau ----------
+let statutsConnus = null; // id -> statut déjà vu (null tant que le premier chargement n'est pas fait)
+const COULEUR = { PREPARATION: "jaune", EN_ROUTE: "orange", LIVREE: "vert", REFUSEE: "rouge" };
+function detecterAlertes() {
+  if (!poste) return;
+  const premier = statutsConnus === null; if (premier) statutsConnus = {};
+  const nouvelles = [];
+  for (const [id, d] of Object.entries(demandes)) {
+    const avant = statutsConnus[id]; statutsConnus[id] = d.statut;
+    if (premier || attente.has(id) || avant === d.statut) continue;
+    const auteur = (d.historique || []).at(-1)?.par;
+    if (poste === "tc2" && avant === undefined && d.statut === "EMISE")
+      nouvelles.push({ titre: `Nouvelle demande ${d.type}${d.priorite === "URGENTE" ? " URGENTE" : ""}`, texte: `${NOM[d.cie] || d.cie} · ${resume(d)}`, couleur: d.priorite === "URGENTE" ? "rouge" : "", tag: id });
+    if (poste === "tc2" && avant !== undefined && d.statut === "ANNULEE")
+      nouvelles.push({ titre: `${d.type} annulée`, texte: `${NOM[d.cie] || d.cie} a annulé sa demande`, couleur: "", tag: id });
+    if (poste !== "tc2" && d.cie === poste && avant !== undefined && auteur === "TC2")
+      nouvelles.push({ titre: `${d.type} : ${STATUTS[d.statut]}`, texte: d.statut === "REFUSEE" ? `Motif : ${(d.historique || []).at(-1)?.commentaire || "non précisé"}` : resume(d), couleur: COULEUR[d.statut] || "", tag: id });
+  }
+  nouvelles.forEach(signaler);
+  majPastille();
+}
+function majPastille() {
+  try {
+    const n = Object.values(demandes).filter(d => poste === "tc2" ? d.statut === "EMISE" : d.cie === poste && ["PREPARATION", "EN_ROUTE"].includes(d.statut)).length;
+    if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge();
+  } catch {}
+}
+let audio = null;
+function debloquerSon() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === "suspended") audio.resume(); } catch {} }
+function bip(urgent) {
+  if (!audio || local.lire("alertes", "") !== "oui") return;
+  try {
+    const t0 = audio.currentTime, notes = urgent ? [880, 660, 880, 660] : [660, 880];
+    notes.forEach((f, i) => { const o = audio.createOscillator(), g = audio.createGain(); o.type = "square"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.18); g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.18 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.18 + 0.16);
+      o.connect(g).connect(audio.destination); o.start(t0 + i * 0.18); o.stop(t0 + i * 0.18 + 0.17); });
+  } catch {}
+}
+function signaler(a) {
+  const urgent = a.couleur === "rouge";
+  const el = document.createElement("div"); el.className = "alerte " + a.couleur; el.textContent = `${a.titre} — ${a.texte}`;
+  el.onclick = () => el.remove(); $("#bandeau").append(el); setTimeout(() => el.remove(), 8000);
+  if (local.lire("alertes", "") === "oui") {
+    try { navigator.vibrate && navigator.vibrate(urgent ? [300, 120, 300, 120, 300] : [200, 100, 200]); } catch {}
+    bip(urgent);
+    if (window.Notification && Notification.permission === "granted" && document.visibilityState !== "visible" && navigator.serviceWorker) {
+      navigator.serviceWorker.ready.then(r => r.showNotification(a.titre, { body: a.texte, tag: a.tag, icon: "icones/icone-192.png", badge: "icones/icone-192.png", renotify: true, requireInteraction: urgent })).catch(() => {});
+    }
+  }
+}
+function majBoutonAlertes() {
+  const b = $("#btn-alertes"); if (!b) return;
+  const on = local.lire("alertes", "") === "oui";
+  b.classList.toggle("actif", on); b.textContent = on ? "ALERTES ON" : "ALERTES";
+}
+async function basculerAlertes() {
+  debloquerSon();
+  if (local.lire("alertes", "") === "oui") { local.ecrire("alertes", "non"); majBoutonAlertes(); return; }
+  local.ecrire("alertes", "oui");
+  if (window.Notification && Notification.permission === "default") { try { await Notification.requestPermission(); } catch {} }
+  majBoutonAlertes();
+  const sysOk = window.Notification && Notification.permission === "granted";
+  signaler({ titre: "Alertes activées", texte: sysOk ? "Son, vibration et notifications." : "Son et vibration. Pour les notifications sur iPhone, installe l'appli sur l'écran d'accueil.", couleur: "vert", tag: "test" });
+}
+document.addEventListener("pointerdown", debloquerSon, { once: true });
+
 function alerte(msg) { const e = $("#erreur") || $("#alerte"); if (e) e.textContent = msg; }
 
 function transition(d, statut, extra = {}) {
@@ -458,7 +536,8 @@ function ouvrir() {
   const h = location.hash.slice(1);
   poste = CIES.includes(h) || h === "tc2" ? h : null;
   if (poste) local.ecrire("poste", poste);
-  if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; }
+  if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
+  majBoutonAlertes();
   panneau = null;
   const main = $("#principal");
   main.className = poste === "tc2" ? "tc2" : poste ? "tc1" : "";
@@ -541,6 +620,7 @@ function ecranPartage() {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button, a"); if (!b) return;
   if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
+  if (b.id === "btn-alertes") return basculerAlertes();
   if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.poste !== undefined) { if (b.dataset.poste) { if (location.hash === "#" + b.dataset.poste) ouvrir(); else location.hash = b.dataset.poste; } else ouvrir(); return; }

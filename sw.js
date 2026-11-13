@@ -1,5 +1,5 @@
 // UBERLOG : cache hors réseau. Changer VERSION à chaque mise en ligne.
-const VERSION = "uberlog-v3";
+const VERSION = "uberlog-v4";
 const COQUILLE = ["./", "./index.html", "./manifest.webmanifest", "./icones/icone-192.png", "./icones/icone-512.png", "./icones/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -24,4 +24,10 @@ self.addEventListener("fetch", e => {
     if (r.ok || r.type === "opaque") { const copie = r.clone(); caches.open(VERSION).then(c => c.put(req, copie)); }
     return r;
   })));
+});
+
+// Toucher une notification ramène sur l'appli
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => cs.length ? cs[0].focus() : self.clients.openWindow("./")));
 });
