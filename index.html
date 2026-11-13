@@ -133,6 +133,9 @@
   .tuile.ouverte { grid-column: 1 / -1; }
   .unites { display: grid; gap: 16px; }
   .unite-tete { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; border-bottom: 1px solid var(--bord); padding-bottom: 4px; }
+  button.unite-tete.jour { all: unset; box-sizing: border-box; cursor: pointer; display: flex; width: 100%; justify-content: space-between; align-items: baseline; gap: 8px;
+    margin-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--sur) 45%, transparent); padding: 6px 0; min-height: 44px; }
+  .unite-tete.jour span { white-space: nowrap; }
   .unite-tete h3 { margin: 0; font: 700 16px/1 var(--f-titre); letter-spacing: .1em; text-transform: uppercase; }
   .unite-tete span { font: 600 12px/1 var(--f-code); color: var(--doux); }
   .tuile-tete { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; padding: 12px; min-height: 112px; align-content: start; }
@@ -378,6 +381,8 @@ function contenu(d, m) {
 }
 // Blessés catégorie A / B / C (A = urgent). Les anciennes demandes UA / UR restent affichées.
 const blesses = s => [["A", s.a], ["B", s.b], ["C", s.c], ["UA", s.ua], ["UR", s.ur]].filter(([, n]) => n);
+const jour = d => new Date(d.maj_le || d.cree_le).toDateString();
+const joursOuverts = new Set(), joursFermes = new Set();
 const creneauTxt = c => c ? jhm(c) : "Dès que possible";
 // ÉVASAN : on ne parle pas de plot mais de nid de blessés ou de nid de DCD
 const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
@@ -407,7 +412,7 @@ function resume(d) {
   const s = d.san || {}; return [...blesses(s).map(([k, n]) => `${k} ${n}`), s.dcd ? `DCD ${s.dcd}` : "", s.evasan ? "" : "Ravito san."].filter(Boolean).join(" · ");
 }
 const ouverts = new Set();
-function tuile(d) {
+function tuile(d, avecUnite) {
   const ouverte = ouverts.has(d.id);
   const m = d.modif;
   const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} TC2 :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
@@ -416,7 +421,7 @@ function tuile(d) {
   const dernier = (d.historique || []).at(-1);
   return `<article class="tuile ${esc(d.statut)} ${ouverte ? "ouverte" : ""}">
     <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
-      <span class="ligne1"><span class="type">${esc(d.type)}</span>${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
+      <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
       <span class="etat">${d._attente ? "Non transmise" : STATUTS[d.statut] || ""}</span>
       <span class="resume">${esc(resume(d))}</span>
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
@@ -469,17 +474,34 @@ function rafraichir() {
   if (poste === "tc2") {
     const actives = tab.filter(d => !FINIS.includes(d.statut));
     const n = s => actives.filter(d => d.statut === s).length;
-    const finiesJour = tab.filter(d => FINIS.includes(d.statut) && new Date(d.maj_le || d.cree_le).toDateString() === new Date().toDateString()).length;
-    $("#compteurs").innerHTML = [["EMISE", "À traiter", n("EMISE")], ["PREPARATION", "Prépa", n("PREPARATION")], ["EN_ROUTE", "En route", n("EN_ROUTE")], ["FINIES", "Finies jour", finiesJour]]
+    const finiesJour = tab.filter(d => FINIS.includes(d.statut) && jour(d) === new Date().toDateString()).length;
+    $("#compteurs").innerHTML = [["EMISE", "À traiter", n("EMISE")], ["PREPARATION", "Prépa", n("PREPARATION")], ["EN_ROUTE", "En route", n("EN_ROUTE")], ["FINIES", "Archives", finiesJour]]
       .map(([k, t, v]) => `<button type="button" class="c-${k} ${filtreTc2 === k ? "choisi" : ""}" data-filtre="${k}"><b>${v}</b><span>${t}</span></button>`).join("");
     tab = filtreTc2 === "ACTIFS" ? actives : filtreTc2 === "FINIES" ? tab.filter(d => FINIS.includes(d.statut)) : tab.filter(d => d.statut === filtreTc2);
     tab.sort((a, b) => (RANG[a.priorite] ?? 3) - (RANG[b.priorite] ?? 3) || String(a.cree_le).localeCompare(String(b.cree_le)));
     if (filtreTc2 === "FINIES") tab.reverse();
   } else {
-    tab = tab.filter(d => d.cie === poste).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
+    // TC1 : les demandes terminées (livrées, refusées, annulées) disparaissent ; elles restent dans les archives du TC2
+    tab = tab.filter(d => d.cie === poste && !FINIS.includes(d.statut)).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
   const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
   // TC2 : demandes regroupées par unité, en carrés colorés comme côté TC1
+  // TC2 : archives des demandes terminées, une rubrique par jour (la plus récente en haut)
+  if (poste === "tc2" && filtreTc2 === "FINIES") {
+    const jours = [...new Set(tab.sort((a, b) => String(b.maj_le || b.cree_le).localeCompare(String(a.maj_le || a.cree_le))).map(jour))];
+    const auj = new Date().toDateString();
+    liste.innerHTML = jours.map(j => {
+      const t = tab.filter(d => jour(d) === j), ouvert = joursOuverts.has(j) || (j === auj && !joursFermes.has(j));
+      const nb = st => t.filter(d => d.statut === st).length;
+      const date = new Date(j).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+      const titre = j === auj ? "Aujourd'hui" : date[0].toUpperCase() + date.slice(1);
+      const bilan = [["LIVREE", "livrée"], ["REFUSEE", "refusée"], ["ANNULEE", "annulée"]].filter(([st]) => nb(st)).map(([st, m]) => `${nb(st)} ${m}${nb(st) > 1 ? "s" : ""}`).join(" · ");
+      return `<div class="unite"><button type="button" class="unite-tete jour" data-jour="${esc(j)}" aria-expanded="${ouvert}"><h3>${esc(titre)} ${ouvert ? "▴" : "▾"}</h3>
+          <span>${bilan}</span></button>
+        ${ouvert ? `<div class="tuiles">${t.map(d => tuile(d, true)).join("")}</div>` : ""}</div>`;
+    }).join("") || `<p class="vide">Aucune demande archivée.</p>`;
+    return;
+  }
   liste.innerHTML = (poste === "tc2"
     ? [...CIES, ...new Set(tab.map(d => d.cie).filter(c => !CIES.includes(c)))].map(c => {
         const t = tab.filter(d => d.cie === c); if (!t.length) return "";
@@ -730,6 +752,10 @@ document.addEventListener("click", async e => {
   if (b.dataset.type) { type = b.dataset.type; vueTc1 = "form"; ouvrir(); scrollTo(0, 0); return; }
   if (b.dataset.vue) { vueTc1 = b.dataset.vue; ouvrir(); scrollTo(0, 0); return; }
   if (b.dataset.ouvre) { const id = b.dataset.ouvre; ouverts.has(id) ? ouverts.delete(id) : ouverts.add(id); b.blur(); rafraichir(); return; }
+  if (b.dataset.jour) { const j = b.dataset.jour, auj = new Date().toDateString();
+    const ouvert = joursOuverts.has(j) || (j === auj && !joursFermes.has(j));
+    if (ouvert) { joursOuverts.delete(j); joursFermes.add(j); } else { joursFermes.delete(j); joursOuverts.add(j); }
+    b.blur(); return rafraichir(); }
   if (b.dataset.filtre) { filtreTc2 = filtreTc2 === b.dataset.filtre ? "ACTIFS" : b.dataset.filtre; rafraichir(); return; }
   if (b.closest("#m-creneau")) { $("#m-creneau").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); return; }
   const act = b.dataset.act; if (!act) return;
