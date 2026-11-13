@@ -86,6 +86,7 @@
   .puces { display: flex; gap: 6px; flex-wrap: wrap; }
   .puces button { padding: 9px 12px; font-size: 14px; min-height: 40px; }
   .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .champ { display: grid; gap: 4px; min-width: 0; }
   .erreur { color: var(--rouge); font-size: 14px; margin: 0; min-height: 1em; }
   .envoyer { min-height: 60px; font-size: 20px; letter-spacing: .14em; }
@@ -373,8 +374,10 @@ function contenu(d, m) {
     return `<div>${esc(l.nom)} <span class="n">${change ? `<s>${l.quantite}</s> ${q2}` : l.quantite}</span> ${esc(l.unite)}</div>`; }).join("");
   if (d.type === "MEC") return `<div><b>${esc(d.mec?.materiel)}</b>${d.mec?.immobilise ? " · IMMOBILISÉ" : ""}</div>${d.mec?.detail ? `<div class="doux">${esc(d.mec.detail)}</div>` : ""}`;
   const s = d.san || {};
-  return `<div>${s.ua ? `UA <span class="n">${s.ua}</span> · ` : ""}${s.ur ? `UR <span class="n">${s.ur}</span> · ` : ""}${s.dcd ? `DCD <span class="n">${s.dcd}</span> · ` : ""}${s.evasan ? "ÉVASAN" : "Ravitaillement sanitaire"}</div>${s.detail ? `<div class="doux">${esc(s.detail)}</div>` : ""}`;
+  return `<div>${blesses(s).map(([k, n]) => `Blessés ${k} <span class="n">${n}</span> · `).join("")}${s.dcd ? `DCD <span class="n">${s.dcd}</span> · ` : ""}${s.evasan ? "ÉVASAN" : "Ravitaillement sanitaire"}</div>${s.detail ? `<div class="doux">${esc(s.detail)}</div>` : ""}`;
 }
+// Blessés catégorie A / B / C (A = urgent). Les anciennes demandes UA / UR restent affichées.
+const blesses = s => [["A", s.a], ["B", s.b], ["C", s.c], ["UA", s.ua], ["UR", s.ur]].filter(([, n]) => n);
 const creneauTxt = c => c ? jhm(c) : "Dès que possible";
 // ÉVASAN : on ne parle pas de plot mais de nid de blessés ou de nid de DCD
 const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
@@ -401,7 +404,7 @@ function carte(d) {
 function resume(d) {
   if (d.type === "RAV") { const l = d.lignes || []; return l.length ? `${l[0].nom} ${l[0].quantite} ${l[0].unite}${l.length > 1 ? ` +${l.length - 1}` : ""}` : ""; }
   if (d.type === "MEC") return (d.mec?.materiel || "") + (d.mec?.immobilise ? " · IMMO" : "");
-  const s = d.san || {}; return [s.ua ? `UA ${s.ua}` : "", s.ur ? `UR ${s.ur}` : "", s.dcd ? `DCD ${s.dcd}` : "", s.evasan ? "" : "Ravito san."].filter(Boolean).join(" · ");
+  const s = d.san || {}; return [...blesses(s).map(([k, n]) => `${k} ${n}`), s.dcd ? `DCD ${s.dcd}` : "", s.evasan ? "" : "Ravito san."].filter(Boolean).join(" · ");
 }
 const ouverts = new Set();
 function tuile(d) {
@@ -510,8 +513,7 @@ function ecranTc1() {
           <input id="mec-autre" placeholder="Autre matériel / immatriculation">
           <div class="puces"><button type="button" id="mec-immo">Immobilisé</button></div>
           <input id="mec-detail" placeholder="Panne (facultatif)">`,
-    SAN: `<div class="duo"><div class="champ"><label for="san-ua">Blessés UA</label><input type="number" inputmode="numeric" min="0" id="san-ua" placeholder="0"></div>
-            <div class="champ"><label for="san-ur">Blessés UR</label><input type="number" inputmode="numeric" min="0" id="san-ur" placeholder="0"></div></div>
+    SAN: `<div class="trio">${["a", "b", "c"].map(k => `<div class="champ"><label for="san-${k}">Blessés ${k.toUpperCase()}</label><input type="number" inputmode="numeric" min="0" id="san-${k}" placeholder="0"></div>`).join("")}</div>
           <div class="champ"><label for="san-dcd">DCD</label><input type="number" inputmode="numeric" min="0" id="san-dcd" placeholder="0"></div>
           <div class="puces"><button type="button" id="san-evasan" class="choisi">Évacuation</button><button type="button" id="san-ravito">Ravitaillement sanitaire</button></div>
           <div class="puces" id="san-lieu"><button type="button" data-v="NID_BLESSES" class="choisi">Nid de blessés</button><button type="button" data-v="NID_DCD">Nid de DCD</button></div>
@@ -646,8 +648,10 @@ function brancherTc1() {
     $("#san-evasan").onclick = () => { $("#san-evasan").classList.add("choisi"); $("#san-ravito").classList.remove("choisi"); lieu(); };
     $("#san-ravito").onclick = () => { $("#san-ravito").classList.add("choisi"); $("#san-evasan").classList.remove("choisi"); lieu(); };
     unique("#san-lieu", lieu);
+    // un blessé A passe la demande en URGENTE
+    $("#san-a").oninput = () => { if (Number($("#san-a").value) > 0) { prio = "URGENTE"; $("#prios").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x.dataset.v === "URGENTE")); } };
     // un nombre de DCD sans blessé propose directement le nid de DCD
-    $("#san-dcd").oninput = () => { if (Number($("#san-dcd").value) > 0 && !Number($("#san-ua").value) && !Number($("#san-ur").value))
+    $("#san-dcd").oninput = () => { if (Number($("#san-dcd").value) > 0 && !["a", "b", "c"].some(k => Number($("#san-" + k).value)))
       $("#san-lieu").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x.dataset.v === "NID_DCD")); lieu(); };
   }
   f.onsubmit = e => {
@@ -667,11 +671,11 @@ function brancherTc1() {
       d.mec = { materiel: [choisi, autre].filter(Boolean).join(" "), immobilise: $("#mec-immo").classList.contains("choisi"), detail: $("#mec-detail").value.trim() };
       if (!d.mec.materiel) return err.textContent = "Choisir le matériel.";
     } else {
-      d.san = { ua: Number($("#san-ua").value) || 0, ur: Number($("#san-ur").value) || 0, dcd: Number($("#san-dcd").value) || 0, evasan: $("#san-evasan").classList.contains("choisi"), detail: $("#san-detail").value.trim() };
-      if (d.san.evasan && !d.san.ua && !d.san.ur && !d.san.dcd) return err.textContent = "Indiquer le nombre de blessés ou de DCD.";
+      d.san = { a: Number($("#san-a").value) || 0, b: Number($("#san-b").value) || 0, c: Number($("#san-c").value) || 0, dcd: Number($("#san-dcd").value) || 0, evasan: $("#san-evasan").classList.contains("choisi"), detail: $("#san-detail").value.trim() };
+      if (d.san.evasan && !d.san.a && !d.san.b && !d.san.c && !d.san.dcd) return err.textContent = "Indiquer le nombre de blessés ou de DCD.";
       if (d.san.evasan) d.plot.genre = $("#san-lieu .choisi")?.dataset.v || "NID_BLESSES";
       if (!d.san.evasan && !d.san.detail) return err.textContent = "Préciser le besoin sanitaire.";
-      if (d.san.ua) d.priorite = "URGENTE";
+      if (d.san.a) d.priorite = "URGENTE";
     }
     if (!d.plot.nom && !d.plot.coordonnees) return err.textContent = `Indiquer le ${d.plot.genre === "NID_DCD" ? "nid de DCD" : d.plot.genre ? "nid de blessés" : "plot"}.`;
     if (!d.plot.genre) local.ecrire("plot." + poste, d.plot);
