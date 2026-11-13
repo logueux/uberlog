@@ -461,9 +461,10 @@ function ecranPostes() {
   $("#poste").textContent = "Choix du poste";
   const dernier = local.lire("poste", "");
   return `<section><h2>Poste</h2><div class="postes">
-      ${CIES.map(c => `<button type="button" data-poste="${c}" class="${dernier === c ? "choisi" : ""}">${NOM[c]}</button>`).join("")}
-      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-poste="tc2">TC2</button></div>
-    <p class="note">Chaque compagnie (TC1) envoie ses demandes au TC2. Le choix est retenu sur cet appareil.</p>
+      ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${NOM[c]}</button>`).join("")}
+      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">TC2</button></div>
+    <div id="confirme-poste"></div>
+    <p class="note">Chaque compagnie (TC1) envoie ses demandes au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
     <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--jaune)"></i>Prise en compte, en préparation</span>
       <span><i style="background:var(--orange)"></i>En cours de livraison</span><span><i style="background:var(--vert)"></i>Reçue et livrée</span><span><i style="background:var(--rouge)"></i>Refusée</span></div></section>`;
 }
@@ -578,9 +579,12 @@ function brancherAcces() {
 function ouvrir() {
   majAdresse();
   if (!configOk || !code) { const main = $("#principal"); main.className = ""; main.innerHTML = ecranAcces(); brancherAcces(); return; }
+  // Unité verrouillée : une fois le profil créé, l'appareil reste sur son poste
+  const verrou = local.lire("verrou", "");
+  if (verrou && location.hash !== "#" + verrou) history.replaceState(null, "", location.pathname + location.search + "#" + verrou);
   const h = location.hash.slice(1);
   poste = CIES.includes(h) || h === "tc2" ? h : null;
-  if (poste) local.ecrire("poste", poste);
+  if (poste) { local.ecrire("poste", poste); if (!verrou) local.ecrire("verrou", poste); majAdresse(); }
   if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
@@ -664,10 +668,18 @@ function ecranPartage() {
 // ---------- Clics ----------
 document.addEventListener("click", async e => {
   const b = e.target.closest("button, a"); if (!b) return;
-  if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
+  if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); if (local.lire("verrou", "")) return ouvrir(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
   if (b.id === "btn-alertes") return basculerAlertes();
   if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
+  if (b.dataset.choix) {
+    $(".postes").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); b.blur();
+    const nom = b.dataset.choix === "tc2" ? "TC2" : NOM[b.dataset.choix];
+    $("#confirme-poste").innerHTML = `<div class="panneau"><p>Cet appareil sera définitivement <b>${esc(nom)}</b>. L'unité ne pourra plus être changée.</p>
+      <div class="actions"><button type="button" data-annule-choix="1">Annuler</button><button type="button" class="ok" data-poste="${b.dataset.choix}">Confirmer ${esc(nom)}</button></div></div>`;
+    return;
+  }
+  if (b.dataset.annuleChoix) { $("#confirme-poste").innerHTML = ""; $(".postes .choisi")?.classList.remove("choisi"); return; }
   if (b.dataset.poste !== undefined) { if (b.dataset.poste) { if (location.hash === "#" + b.dataset.poste) ouvrir(); else location.hash = b.dataset.poste; } else ouvrir(); return; }
   if (b.dataset.copie) { try { await navigator.clipboard.writeText(b.dataset.copie); b.textContent = "Copié"; } catch { b.textContent = b.dataset.copie; } return; }
   if (b.dataset.type) { type = b.dataset.type; vueTc1 = "form"; ouvrir(); scrollTo(0, 0); return; }
