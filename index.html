@@ -106,6 +106,33 @@
   .panneau { border-top: 1px dashed var(--bord); padding-top: 10px; display: grid; gap: 8px; }
   .vide { color: var(--doux); padding: 20px 4px; text-align: center; border: 1px dashed var(--bord); border-radius: 6px; }
 
+  /* TC1 : accueil en tuiles */
+  .nouvelle { min-height: 64px; font-size: 20px; letter-spacing: .14em; }
+  .tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-items: start; }
+  .tuile { --c: var(--neutre); background: var(--carte); background: color-mix(in srgb, var(--c) 16%, var(--carte)); border: 1px solid var(--bord);
+           border-top: 6px solid var(--c); border-radius: 8px; min-width: 0; display: grid; }
+  .tuile.PREPARATION { --c: var(--jaune); } .tuile.EN_ROUTE { --c: var(--orange); } .tuile.LIVREE { --c: var(--vert); }
+  .tuile.REFUSEE { --c: var(--rouge); } .tuile.ANNULEE { --c: var(--bord); opacity: .65; }
+  .tuile.ouverte { grid-column: 1 / -1; }
+  .tuile-tete { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; padding: 12px; min-height: 112px; align-content: start; }
+  .tuile-tete:focus-visible { outline: 2px solid var(--kaki); outline-offset: -2px; }
+  .tuile-tete .type { font-size: 24px; }
+  .tuile-tete .ligne1 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .tuile-tete .etat { font: 700 12px/1.1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--c); }
+  .tuile.EMISE .etat { color: var(--neutre); }
+  .tuile-tete .resume { font-size: 14px; color: var(--texte); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tuile-tete .pied { display: flex; justify-content: space-between; align-items: center; gap: 6px; font: 600 12px/1 var(--f-code); color: var(--doux); }
+  .tuile-tete .pied::after { content: "▾"; font-size: 14px; }
+  .tuile.ouverte .tuile-tete .pied::after { content: "▴"; }
+  .tuile-corps { padding: 0 12px 12px; display: grid; gap: 6px; border-top: 1px dashed var(--bord); padding-top: 10px; }
+  .choix-type { grid-template-columns: 1fr; }
+  .choix-type button { min-height: 120px; font-size: 38px; }
+  .choix-type button small { font-size: 13px; }
+  .barre-form { display: flex; align-items: center; gap: 10px; }
+  .barre-form .type { font-size: 26px; }
+  .barre-form small { color: var(--doux); font-size: 13px; letter-spacing: .06em; }
+  .barre-form button { margin-left: auto; }
+
   /* TC2 */
   .compteurs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .compteurs button { padding: 8px 4px; display: grid; gap: 2px; text-align: center; min-height: 58px; }
@@ -264,6 +291,32 @@ function carte(d) {
     ${actions(d)}</article>`;
 }
 
+function resume(d) {
+  if (d.type === "RAV") { const l = d.lignes || []; return l.length ? `${l[0].nom} ${l[0].quantite} ${l[0].unite}${l.length > 1 ? ` +${l.length - 1}` : ""}` : ""; }
+  if (d.type === "MEC") return (d.mec?.materiel || "") + (d.mec?.immobilise ? " · IMMO" : "");
+  const s = d.san || {}; return [s.ua ? `UA ${s.ua}` : "", s.ur ? `UR ${s.ur}` : "", s.evasan ? "" : "Ravito san."].filter(Boolean).join(" · ");
+}
+const ouverts = new Set();
+function tuile(d) {
+  const ouverte = ouverts.has(d.id);
+  const m = d.modif;
+  const plot = m?.plot ? `<div class="plot"><b>Plot TC2 :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
+      <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
+    : `<div class="plot">${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
+  const dernier = (d.historique || []).at(-1);
+  return `<article class="tuile ${esc(d.statut)} ${ouverte ? "ouverte" : ""}">
+    <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
+      <span class="ligne1"><span class="type">${esc(d.type)}</span>${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
+      <span class="etat">${d._attente ? "Non transmise" : STATUTS[d.statut] || ""}</span>
+      <span class="resume">${esc(resume(d))}</span>
+      <span class="pied"><span>${jhm(d.cree_le)}</span></span>
+    </button>
+    ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}
+      ${dernier?.commentaire ? `<div class="doux">« ${esc(dernier.commentaire)} » · ${esc(dernier.par)} ${hm(dernier.le)}</div>` : ""}
+      ${actions(d)}</div>` : ""}
+  </article>`;
+}
+
 let panneau = null; // { id, mode: "MOD" | "REF" }
 function actions(d) {
   if (d._attente) return "";
@@ -297,7 +350,7 @@ function panneauModif(d) {
 const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000).toISOString();
 
 // ---------- Écrans ----------
-let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "";
+let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "", vueTc1 = "accueil", dernierPoste = null;
 function rafraichir() {
   const liste = $("#liste"); if (!liste) return;
   if (panneau && liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
@@ -314,7 +367,8 @@ function rafraichir() {
   } else {
     tab = tab.filter(d => d.cie === poste).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
-  liste.innerHTML = tab.map(carte).join("") || `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Choisis RAV, MEC ou SAN ci-dessus."}</p>`;
+  const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
+  liste.innerHTML = (poste === "tc2" ? tab.map(carte) : tab.map(tuile)).join("") || vide;
 }
 
 function ecranPostes() {
@@ -344,8 +398,17 @@ function ecranTc1() {
           <div class="puces"><button type="button" id="san-evasan" class="choisi">Évacuation</button><button type="button" id="san-ravito">Ravitaillement sanitaire</button></div>
           <input id="san-detail" placeholder="Précisions (facultatif)">`,
   }[type];
+  if (vueTc1 === "accueil") return `<section>
+    <button type="button" class="plein nouvelle" data-vue="choix">+ Nouvelle demande</button>
+    <h2>Mes demandes</h2>
+    <div class="tuiles" id="liste"></div>
+    <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--jaune)"></i>En préparation</span>
+      <span><i style="background:var(--orange)"></i>En livraison</span><span><i style="background:var(--vert)"></i>Livrée</span><span><i style="background:var(--rouge)"></i>Refusée</span></div></section>`;
+  if (vueTc1 === "choix") return `<section>
+    <div class="barre-form"><span class="type">Nouvelle demande</span><button type="button" data-vue="accueil">Retour</button></div>
+    <div class="gros choix-type">${Object.keys(TYPES).map(t => `<button type="button" data-type="${t}">${t}<small>${TYPES[t]}</small></button>`).join("")}</div></section>`;
   return `<section>
-    <div class="gros">${Object.keys(TYPES).map(t => `<button type="button" data-type="${t}" class="${type === t ? "choisi" : ""}">${t}<small>${TYPES[t]}</small></button>`).join("")}</div>
+    <div class="barre-form"><span class="type">${type}</span><small>${TYPES[type]}</small><button type="button" data-vue="accueil">Annuler</button></div>
     <form class="fiche" id="formulaire" novalidate>
       ${corps}
       <div class="duo"><div class="champ"><label for="f-plot">Plot</label><input id="f-plot" value="${esc(p.nom)}" placeholder="PLOT ALPHA"></div>
@@ -354,8 +417,7 @@ function ecranTc1() {
       <div class="puces" id="prios">${["ROUTINE", "PRIORITAIRE", "URGENTE"].map(x => `<button type="button" data-v="${x}" class="${prio === x ? "choisi" : ""}">${x}</button>`).join("")}</div>
       <p class="erreur" id="erreur" role="alert"></p>
       <button type="submit" class="plein envoyer">Envoyer ${type}</button>
-    </form></section>
-    <section><h2>Mes demandes</h2><div class="liste" id="liste"></div></section>`;
+    </form></section>`;
 }
 
 function ecranTc2() {
@@ -396,11 +458,12 @@ function ouvrir() {
   const h = location.hash.slice(1);
   poste = CIES.includes(h) || h === "tc2" ? h : null;
   if (poste) local.ecrire("poste", poste);
+  if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; }
   panneau = null;
   const main = $("#principal");
   main.className = poste === "tc2" ? "tc2" : poste ? "tc1" : "";
   main.innerHTML = !poste ? ecranPostes() : poste === "tc2" ? ecranTc2() : ecranTc1();
-  if (poste && poste !== "tc2") brancherTc1();
+  if (poste && poste !== "tc2" && vueTc1 === "form") brancherTc1();
   rafraichir();
 }
 
@@ -443,8 +506,8 @@ function brancherTc1() {
     }
     if (!d.plot.nom && !d.plot.coordonnees) return err.textContent = "Indiquer le plot.";
     local.ecrire("plot." + poste, d.plot);
-    prio = "ROUTINE"; creneau = "";
-    ouvrir();
+    prio = "ROUTINE"; creneau = ""; vueTc1 = "accueil";
+    ouvrir(); scrollTo(0, 0);
     ecrire(d);
   };
 }
@@ -482,7 +545,9 @@ document.addEventListener("click", async e => {
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.poste !== undefined) { if (b.dataset.poste) { if (location.hash === "#" + b.dataset.poste) ouvrir(); else location.hash = b.dataset.poste; } else ouvrir(); return; }
   if (b.dataset.copie) { try { await navigator.clipboard.writeText(b.dataset.copie); b.textContent = "Copié"; } catch { b.textContent = b.dataset.copie; } return; }
-  if (b.dataset.type) { type = b.dataset.type; ouvrir(); return; }
+  if (b.dataset.type) { type = b.dataset.type; vueTc1 = "form"; ouvrir(); scrollTo(0, 0); return; }
+  if (b.dataset.vue) { vueTc1 = b.dataset.vue; ouvrir(); scrollTo(0, 0); return; }
+  if (b.dataset.ouvre) { const id = b.dataset.ouvre; ouverts.has(id) ? ouverts.delete(id) : ouverts.add(id); b.blur(); rafraichir(); return; }
   if (b.dataset.filtre) { filtreTc2 = filtreTc2 === b.dataset.filtre ? "ACTIFS" : b.dataset.filtre; rafraichir(); return; }
   if (b.closest("#m-creneau")) { $("#m-creneau").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); return; }
   const act = b.dataset.act; if (!act) return;
