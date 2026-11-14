@@ -234,6 +234,11 @@ const FINIS = ["LIVREE", "REFUSEE", "ANNULEE"];
 // Circuit : TC1 émet → S4 valide / amende et donne l'ordre → TC2 exécute.
 // Une demande « Émise » sans ordre est chez le S4 ; avec ordre (d.ordre) elle est chez le TC2.
 const CENTRES = { s4: "S4", tc2: "TC2" };
+// Mode administrateur : seul l'appareil où le code administrateur a été saisi peut changer de poste.
+// Seule l'empreinte SHA-256 du code figure ici, jamais le code lui-même.
+const ADMIN_EMPREINTE = "a3a63d1995c31e2f83b139eb3ffdb20a34f232990df7a7f05d0930e16aeda040";
+const estAdmin = () => local.lire("admin", "") === ADMIN_EMPREINTE;
+async function empreinte(t) { const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, "0")).join(""); }
 const estCentre = p => p in CENTRES;
 const nomPoste = p => CENTRES[p] || NOM[p] || p;
 const cle = d => d.statut === "EMISE" ? (d.ordre ? "ORDRE" : "EMISE") : d.statut;
@@ -555,6 +560,7 @@ function ecranPostes() {
       <button type="button" class="tc2 ${dernier === "s4" ? "choisi" : ""}" data-choix="s4">S4</button>
       <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">TC2</button></div>
     <div id="confirme-poste"></div>
+    ${estAdmin() ? `<p class="note"><b>Mode administrateur</b> : cet appareil peut changer de poste à tout moment en touchant le nom du poste en haut.</p>` : ""}
     <p class="note">Chaque compagnie (TC1) envoie ses demandes au S4, qui les valide et donne l'ordre au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
     <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--jaune)"></i>Prise en compte, en préparation</span>
       <span><i style="background:var(--orange)"></i>En cours de livraison</span><span><i style="background:var(--vert)"></i>Reçue et livrée</span><span><i style="background:var(--rouge)"></i>Refusée</span></div></section>`;
@@ -672,11 +678,11 @@ function ouvrir() {
   majAdresse();
   if (!configOk || !code) { const main = $("#principal"); main.className = ""; main.innerHTML = ecranAcces(); brancherAcces(); return; }
   // Unité verrouillée : une fois le profil créé, l'appareil reste sur son poste
-  const verrou = local.lire("verrou", "");
+  const verrou = estAdmin() ? "" : local.lire("verrou", "");
   if (verrou && location.hash !== "#" + verrou) history.replaceState(null, "", location.pathname + location.search + "#" + verrou);
   const h = location.hash.slice(1);
   poste = CIES.includes(h) || estCentre(h) ? h : null;
-  if (poste) { local.ecrire("poste", poste); if (!verrou) local.ecrire("verrou", poste); majAdresse(); }
+  if (poste) { local.ecrire("poste", poste); if (!verrou && !estAdmin()) local.ecrire("verrou", poste); majAdresse(); }
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
@@ -762,7 +768,17 @@ function ecranPartage() {
     <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr"><canvas data-qr="${k}" aria-label="QR code ${t}"></canvas><b>${t}</b>
       <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button></div>`).join("")}</div>
     <p class="note" id="qr-erreur"></p>
-    <div class="actions"><button type="button" data-poste="${esc(local.lire("poste", "") || "")}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div></section>`;
+    <div class="actions"><button type="button" data-poste="${esc(local.lire("poste", "") || "")}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div>
+    <h2>Mode administrateur</h2>
+    ${estAdmin() ? `<p class="note">Actif sur cet appareil : touche le nom du poste en haut pour changer de poste.</p>
+      <button type="button" id="admin-quitter">Quitter le mode administrateur</button>`
+    : `<form class="fiche" id="form-admin" novalidate><input id="admin-code" autocomplete="off" autocapitalize="characters" placeholder="Code administrateur">
+      <button type="submit" class="plein">Activer sur cet appareil</button><p class="erreur" id="admin-erreur" role="alert"></p></form>`}</section>`;
+  const fa = $("#form-admin");
+  if (fa) fa.onsubmit = async e => { e.preventDefault();
+    try { const h = await empreinte($("#admin-code").value.trim().toUpperCase());
+      if (h !== ADMIN_EMPREINTE) { $("#admin-erreur").textContent = "Code incorrect."; return; }
+      local.ecrire("admin", h); ecranPartage(); } catch { $("#admin-erreur").textContent = "Impossible de vérifier le code ici."; } };
   let ok = true;
   main.querySelectorAll("canvas[data-qr]").forEach(cv => ok = dessinerQr(cv, `${LIEN}?k=${encodeURIComponent(code)}&p=${cv.dataset.qr}`) && ok);
   if (!ok) $("#qr-erreur").textContent = "Les QR codes n'ont pas pu se charger. Utilise « Copier le lien ».";
@@ -771,14 +787,15 @@ function ecranPartage() {
 // ---------- Clics ----------
 document.addEventListener("click", async e => {
   const b = e.target.closest("button, a"); if (!b) return;
-  if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); if (local.lire("verrou", "")) return ouvrir(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
+  if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); if (!estAdmin() && local.lire("verrou", "")) return ouvrir(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
   if (b.id === "btn-alertes") return basculerAlertes();
   if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
+  if (b.id === "admin-quitter") { local.ecrire("admin", ""); if (poste) local.ecrire("verrou", poste); return ecranPartage(); }
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.choix) {
     $(".postes").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); b.blur();
     const nom = nomPoste(b.dataset.choix);
-    $("#confirme-poste").innerHTML = `<div class="panneau"><p>Cet appareil sera définitivement <b>${esc(nom)}</b>. L'unité ne pourra plus être changée.</p>
+    $("#confirme-poste").innerHTML = `<div class="panneau"><p>${estAdmin() ? `Passer sur le poste <b>${esc(nom)}</b>.` : `Cet appareil sera définitivement <b>${esc(nom)}</b>. L'unité ne pourra plus être changée.`}</p>
       <div class="actions"><button type="button" data-annule-choix="1">Annuler</button><button type="button" class="ok" data-poste="${b.dataset.choix}">Confirmer ${esc(nom)}</button></div></div>`;
     return;
   }
