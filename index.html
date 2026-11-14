@@ -163,7 +163,7 @@
   .compteurs b { font: 700 22px/1 var(--f-code); font-variant-numeric: tabular-nums; }
   .compteurs span { font-size: 11px; letter-spacing: .08em; color: var(--doux); }
   .compteurs .c-EMISE b { color: var(--neutre); } .compteurs .c-PREPARATION b { color: var(--jaune); }
-  .compteurs .c-EN_ROUTE b { color: var(--orange); } .compteurs .c-FINIES b { color: var(--vert); }
+  .compteurs .c-EN_ROUTE b, .compteurs .c-EN_COURS b { color: var(--orange); } .compteurs .c-FINIES b { color: var(--vert); }
   .compteurs button.choisi { background: var(--kaki-fonce); border-color: var(--kaki); }
   .compteurs button.choisi span { color: var(--texte); }
 
@@ -183,6 +183,11 @@
   body[data-profil="jonquille"] { --fond-profil: linear-gradient(to top right, #1b5326 50%, #5e4f0a 50%); --sur: #e3e8cf; --sur-fort: #fff; }
   body[data-profil="vert"] { --fond-profil: #1b5326; --sur: #cfe6d3; --sur-fort: #fff; }
   body[data-profil="noir"] { --fond-profil: #000; }
+  body[data-profil="s4"] { --fond-profil: #4a1a2a; --sur: #ecd3db; --sur-fort: #fff; }
+  .ordre { border-left: 3px solid var(--kaki); padding-left: 8px; font-size: 14px; display: grid; gap: 2px; }
+  .ordre.retour { border-left-color: var(--orange); }
+  .ordre b { font: 700 12px/1.2 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); }
+  .ordre.retour b { color: var(--orange); }
   body[data-profil="tc2"] { --fond-profil: #393d41; --sur: #d4d7da; --sur-fort: #fff; }
   h2, .note, .legende, .vide, .unite-tete span { color: var(--sur); }
   .unite-tete h3, .barre-form .type { color: var(--sur-fort); }
@@ -226,6 +231,14 @@ const NOM = { bleu: "Bleu", furieux: "Furieux", jonquille: "Jonquille", vert: "V
 const TYPES = { RAV: "Ravitaillement", MEC: "Mécanique", SAN: "Sanitaire" };
 const STATUTS = { EMISE: "Émise", PREPARATION: "En préparation", EN_ROUTE: "En livraison", LIVREE: "Livrée", REFUSEE: "Refusée", ANNULEE: "Annulée" };
 const FINIS = ["LIVREE", "REFUSEE", "ANNULEE"];
+// Circuit : TC1 émet → S4 valide / amende et donne l'ordre → TC2 exécute.
+// Une demande « Émise » sans ordre est chez le S4 ; avec ordre (d.ordre) elle est chez le TC2.
+const CENTRES = { s4: "S4", tc2: "TC2" };
+const estCentre = p => p in CENTRES;
+const nomPoste = p => CENTRES[p] || NOM[p] || p;
+const cle = d => d.statut === "EMISE" ? (d.ordre ? "ORDRE" : "EMISE") : d.statut;
+const libelle = d => d.statut === "EMISE" ? (d.ordre ? "Validée S4" : d.retour ? "Retour TC2" : poste === "tc2" ? "Attente S4" : "Émise") : STATUTS[d.statut] || "";
+const MOTIFS_TC2 = ["Moyens indisponibles", "Stock épuisé", "Itinéraire impraticable", "Hors délai"];
 const RANG = { URGENTE: 0, PRIORITAIRE: 1, ROUTINE: 2 };
 const ARTICLES = [
   { k: "rations", classe: "I", nom: "Rations", unite: "jours" },
@@ -303,22 +316,29 @@ function detecterAlertes() {
   const premier = statutsConnus === null; if (premier) statutsConnus = {};
   const nouvelles = [];
   for (const [id, d] of Object.entries(demandes)) {
-    const avant = statutsConnus[id]; statutsConnus[id] = d.statut;
-    if (premier || attente.has(id) || avant === d.statut) continue;
-    const auteur = (d.historique || []).at(-1)?.par;
-    if (poste === "tc2" && avant === undefined && d.statut === "EMISE")
-      nouvelles.push({ titre: `Nouvelle demande ${d.type}${d.priorite === "URGENTE" ? " URGENTE" : ""}`, texte: `${NOM[d.cie] || d.cie} · ${resume(d)}`, couleur: d.priorite === "URGENTE" ? "rouge" : "", tag: id });
-    if (poste === "tc2" && avant !== undefined && d.statut === "ANNULEE")
-      nouvelles.push({ titre: `${d.type} annulée`, texte: `${NOM[d.cie] || d.cie} a annulé sa demande`, couleur: "", tag: id });
-    if (poste !== "tc2" && d.cie === poste && avant !== undefined && auteur === "TC2")
-      nouvelles.push({ titre: `${d.type} : ${STATUTS[d.statut]}`, texte: d.statut === "REFUSEE" ? `Motif : ${(d.historique || []).at(-1)?.commentaire || "non précisé"}` : resume(d), couleur: COULEUR[d.statut] || "", tag: id });
+    const k = cle(d), avant = statutsConnus[id]; statutsConnus[id] = k;
+    if (premier || attente.has(id) || avant === k) continue;
+    const auteur = (d.historique || []).at(-1)?.par, motif = (d.historique || []).at(-1)?.commentaire;
+    const urg = d.priorite === "URGENTE", unite = NOM[d.cie] || d.cie;
+    if (poste === "s4" && k === "EMISE" && avant === undefined)
+      nouvelles.push({ titre: `Nouvelle demande ${d.type}${urg ? " URGENTE" : ""}`, texte: `${unite} · ${resume(d)}`, couleur: urg ? "rouge" : "", tag: id });
+    if (poste === "s4" && k === "EMISE" && avant === "ORDRE")
+      nouvelles.push({ titre: `TC2 : ${d.type} impossible`, texte: `${unite} · ${motif || "motif non précisé"}`, couleur: "orange", tag: id });
+    if (poste === "tc2" && k === "EMISE" && avant === undefined)
+      nouvelles.push({ titre: `Copie : demande ${d.type}${urg ? " URGENTE" : ""}`, texte: `${unite} · en attente de l'ordre du S4`, couleur: "", tag: id });
+    if (poste === "tc2" && k === "ORDRE")
+      nouvelles.push({ titre: `Ordre S4 : ${d.type}${urg ? " URGENT" : ""}`, texte: `${unite} · ${resume(d)}`, couleur: urg ? "rouge" : "", tag: id });
+    if (estCentre(poste) && k === "ANNULEE" && avant !== undefined && true)
+      nouvelles.push({ titre: `${d.type} annulée`, texte: `${unite} a annulé sa demande`, couleur: "", tag: id });
+    if (!estCentre(poste) && d.cie === poste && avant !== undefined && estCentre(Object.keys(CENTRES).find(c => CENTRES[c] === auteur) || "") && !(k === "EMISE" && avant === "ORDRE"))
+      nouvelles.push({ titre: `${d.type} : ${libelle(d)}`, texte: d.statut === "REFUSEE" ? `Motif : ${motif || "non précisé"}` : resume(d), couleur: COULEUR[d.statut] || "", tag: id });
   }
   nouvelles.forEach(signaler);
   majPastille();
 }
 function majPastille() {
   try {
-    const n = Object.values(demandes).filter(d => poste === "tc2" ? d.statut === "EMISE" : d.cie === poste && ["PREPARATION", "EN_ROUTE"].includes(d.statut)).length;
+    const n = Object.values(demandes).filter(d => poste === "s4" ? cle(d) === "EMISE" : poste === "tc2" ? cle(d) === "ORDRE" : d.cie === poste && ["PREPARATION", "EN_ROUTE"].includes(d.statut)).length;
     if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge();
   } catch {}
 }
@@ -366,7 +386,8 @@ function alerte(msg) { const e = $("#erreur") || $("#alerte"); if (e) e.textCont
 function transition(d, statut, extra = {}) {
   const doc = structuredClone({ ...d }); delete doc._attente;
   Object.assign(doc, extra, { statut, maj_le: new Date().toISOString() });
-  doc.historique = [...(doc.historique || []), { statut, le: doc.maj_le, par: poste === "tc2" ? "TC2" : NOM[poste], commentaire: extra.motif || "" }];
+  doc.historique = [...(doc.historique || []), { statut, le: doc.maj_le, par: nomPoste(poste), commentaire: extra.motif || extra.note || "" }];
+  delete doc.motif; delete doc.note;
   ecrire(doc);
 }
 
@@ -389,7 +410,7 @@ const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
 const lieuNom = d => LIEUX[d.plot?.genre] || "Plot";
 function carte(d) {
   const m = d.modif;
-  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} TC2 :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
+  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} retenu :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
       <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
     : `<div class="plot">${d.plot?.genre ? `<b>${lieuNom(d)} :</b> ` : ""}${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
   const dernier = (d.historique || []).at(-1);
@@ -407,7 +428,7 @@ function carte(d) {
 }
 
 function resume(d) {
-  if (d.type === "RAV") { const l = d.lignes || []; return l.length ? `${l[0].nom} ${l[0].quantite} ${l[0].unite}${l.length > 1 ? ` +${l.length - 1}` : ""}` : ""; }
+  if (d.type === "RAV") { const l = (d.lignes || []).map((x, i) => d.modif?.lignes?.[i] ? { ...x, quantite: d.modif.lignes[i].quantite } : x); return l.length ? `${l[0].nom} ${l[0].quantite} ${l[0].unite}${l.length > 1 ? ` +${l.length - 1}` : ""}` : ""; }
   if (d.type === "MEC") return (d.mec?.materiel || "") + (d.mec?.immobilise ? " · IMMO" : "");
   const s = d.san || {}; return [...blesses(s).map(([k, n]) => `${k} ${n}`), s.dcd ? `DCD ${s.dcd}` : "", s.evasan ? "" : "Ravito san."].filter(Boolean).join(" · ");
 }
@@ -415,44 +436,50 @@ const ouverts = new Set();
 function tuile(d, avecUnite) {
   const ouverte = ouverts.has(d.id);
   const m = d.modif;
-  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} TC2 :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
+  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} retenu :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
       <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
     : `<div class="plot">${d.plot?.genre ? `<b>${lieuNom(d)} :</b> ` : ""}${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
   const dernier = (d.historique || []).at(-1);
   return `<article class="tuile ${esc(d.statut)} ${ouverte ? "ouverte" : ""}">
     <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
       <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
-      <span class="etat">${d._attente ? "Non transmise" : STATUTS[d.statut] || ""}</span>
+      <span class="etat">${d._attente ? "Non transmise" : libelle(d)}</span>
       <span class="resume">${esc(d.statut === "REFUSEE" && dernier?.commentaire ? "Motif : " + dernier.commentaire : resume(d))}</span>
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
     </button>
-    ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}
+    ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}${blocOrdre(d)}
       ${d.remarques ? `<div class="doux">${esc(d.remarques)}</div>` : ""}
       ${dernier?.commentaire ? `<div class="doux">« ${esc(dernier.commentaire)} » · ${esc(dernier.par)} ${hm(dernier.le)}</div>` : ""}
       ${actions(d)}</div>` : ""}
   </article>`;
 }
 
-let panneau = null; // { id, mode: "MOD" | "REF" }
+function blocOrdre(d) {
+  const o = d.ordre, r = d.retour;
+  return (o ? `<div class="ordre"><b>Ordre S4</b>${o.itineraire ? `<div>Itinéraire : ${esc(o.itineraire)}</div>` : ""}${o.moyens ? `<div>Moyens : ${esc(o.moyens)}</div>` : ""}${o.consigne ? `<div>Consigne : ${esc(o.consigne)}</div>` : ""}</div>` : "")
+    + (r && d.statut === "EMISE" && !o ? `<div class="ordre retour"><b>Retour TC2</b><div>${esc(r.motif)} · ${hm(r.le)}</div></div>` : "");
+}
+let panneau = null; // { id, mode: "MOD" | "REF" | "IMP" }
 function actions(d) {
   if (d._attente) return "";
   const b = (act, txt, cls) => `<button type="button" class="${cls}" data-act="${act}" data-id="${esc(d.id)}">${txt}</button>`;
-  if (poste !== "tc2") {
+  if (!estCentre(poste)) {
     if (d.statut === "EMISE") return `<div class="actions">${b("ANNULER", "Annuler", "ko")}</div>`;
     if (d.statut === "EN_ROUTE") return `<div class="actions">${b("RECU", "Reçu", "ok")}</div>`;
     if (d.statut === "REFUSEE" && !d.lu_tc1) return `<div class="actions">${b("LU", "Lu", "plein")}</div>`;
     return "";
   }
-  if (panneau?.id === d.id) return panneau.mode === "REF" ? panneauRefus(d) : panneauModif(d);
+  if (panneau?.id === d.id) return panneau.mode === "REF" ? panneauRefus(d, MOTIFS, "MOTIF", "Motif du refus") : panneau.mode === "IMP" ? panneauRefus(d, MOTIFS_TC2, "IMPOSSIBLE", "Pourquoi impossible ? (retour au S4)") : panneauModif(d);
+  if (poste === "s4") return cle(d) === "EMISE" ? `<div class="actions">${b("VALIDER", "Valider", "ok")}${b("MODIFIER", "Amender", "mod")}${b("REFUSER", "Refuser", "ko")}</div>` : "";
   return ({
-    EMISE: `<div class="actions">${b("ACCEPTER", "Accepter", "ok")}${b("MODIFIER", "Modifier", "mod")}${b("REFUSER", "Refuser", "ko")}</div>`,
+    ORDRE: `<div class="actions">${b("ACCEPTER", "Prise en compte", "ok")}${b("SIGNALER", "Impossible", "ko")}</div>`,
     PREPARATION: `<div class="actions">${b("DEPART", "Départ convoi", "plein")}</div>`,
     EN_ROUTE: `<div class="actions">${b("LIVRE", "Livrée", "ok")}</div>`,
-  })[d.statut] || "";
+  })[cle(d)] || "";
 }
-function panneauRefus(d) {
-  return `<div class="panneau"><label>Motif du refus</label>
-    <div class="puces">${MOTIFS.map(mo => `<button type="button" data-act="MOTIF" data-id="${esc(d.id)}" data-v="${esc(mo)}">${esc(mo)}</button>`).join("")}</div>
+function panneauRefus(d, motifs, act, titre) {
+  return `<div class="panneau"><label>${titre}</label>
+    <div class="puces">${motifs.map(mo => `<button type="button" data-act="${act}" data-id="${esc(d.id)}" data-v="${esc(mo)}">${esc(mo)}</button>`).join("")}</div>
     <div class="actions"><button type="button" data-act="FERMER">Retour</button></div></div>`;
 }
 function panneauModif(d) {
@@ -462,7 +489,10 @@ function panneauModif(d) {
     <div class="duo"><div class="champ"><label for="m-plot">${lieuNom(d)}</label><input id="m-plot" value="${esc(d.plot?.nom)}"></div>
       <div class="champ"><label for="m-coord">Coordonnées</label><input id="m-coord" class="code" value="${esc(d.plot?.coordonnees)}"></div></div>
     <div class="champ"><label>Créneau</label><div class="puces" id="m-creneau">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join("")}</div></div>
-    <div class="actions"><button type="button" data-act="FERMER">Retour</button><button type="button" class="ok" data-act="VALIDER_MODIF" data-id="${esc(d.id)}">Accepter modifiée</button></div></div>`;
+    <div class="champ"><label for="m-itin">Itinéraire</label><input id="m-itin" placeholder="Ex. RN4 puis piste P2" value="${esc(d.ordre?.itineraire)}"></div>
+    <div class="champ"><label for="m-moyens">Moyens</label><input id="m-moyens" placeholder="Ex. 2 PPLOG, 1 citerne" value="${esc(d.ordre?.moyens)}"></div>
+    <div class="champ"><label for="m-consigne">Consigne au TC2</label><input id="m-consigne" placeholder="Facultatif" value="${esc(d.ordre?.consigne)}"></div>
+    <div class="actions"><button type="button" data-act="FERMER">Retour</button><button type="button" class="ok" data-act="VALIDER_MODIF" data-id="${esc(d.id)}">Valider et donner l'ordre</button></div></div>`;
 }
 const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000).toISOString();
 
@@ -472,13 +502,16 @@ function rafraichir() {
   const liste = $("#liste"); if (!liste) return;
   if (panneau && liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
   let tab = Object.values(tout());
-  if (poste === "tc2") {
+  if (estCentre(poste)) {
+    // le TC2 est en copie de toutes les demandes, mais n'agit qu'après l'ordre du S4
     const actives = tab.filter(d => !FINIS.includes(d.statut));
-    const n = s => actives.filter(d => d.statut === s).length;
+    const groupe = k => k === "EN_COURS" ? ["PREPARATION", "EN_ROUTE"] : [k];
+    const n = k => actives.filter(d => groupe(k).includes(cle(d))).length;
     const finiesJour = tab.filter(d => FINIS.includes(d.statut) && jour(d) === new Date().toDateString()).length;
-    $("#compteurs").innerHTML = [["EMISE", "À traiter", n("EMISE")], ["PREPARATION", "Prépa", n("PREPARATION")], ["EN_ROUTE", "En route", n("EN_ROUTE")], ["FINIES", "Archives", finiesJour]]
+    const compteurs = poste === "s4" ? [["EMISE", "À valider"], ["ORDRE", "Chez TC2"], ["EN_COURS", "En cours"]] : [["EMISE", "Chez S4"], ["ORDRE", "Ordres S4"], ["EN_COURS", "En cours"]];
+    $("#compteurs").innerHTML = [...compteurs.map(([k, t]) => [k, t, n(k)]), ["FINIES", "Archives", finiesJour]]
       .map(([k, t, v]) => `<button type="button" class="c-${k} ${filtreTc2 === k ? "choisi" : ""}" data-filtre="${k}"><b>${v}</b><span>${t}</span></button>`).join("");
-    tab = filtreTc2 === "ACTIFS" ? actives : filtreTc2 === "FINIES" ? tab.filter(d => FINIS.includes(d.statut)) : tab.filter(d => d.statut === filtreTc2);
+    tab = filtreTc2 === "ACTIFS" ? actives : filtreTc2 === "FINIES" ? tab.filter(d => FINIS.includes(d.statut)) : actives.filter(d => groupe(filtreTc2).includes(cle(d)));
     tab.sort((a, b) => (RANG[a.priorite] ?? 3) - (RANG[b.priorite] ?? 3) || String(a.cree_le).localeCompare(String(b.cree_le)));
     if (filtreTc2 === "FINIES") tab.reverse();
   } else {
@@ -486,10 +519,10 @@ function rafraichir() {
     // une demande refusée reste affichée jusqu'à ce que le TC1 touche « Lu »
     tab = tab.filter(d => d.cie === poste && (!FINIS.includes(d.statut) || (d.statut === "REFUSEE" && !d.lu_tc1))).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
-  const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "tc2" ? "Rien à traiter. Les demandes des compagnies arrivent ici." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
+  const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "s4" ? "Rien à valider. Les demandes des compagnies arrivent ici." : poste === "tc2" ? "Aucune demande. Les demandes des compagnies arrivent ici en copie ; tu agis après l'ordre du S4." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
   // TC2 : demandes regroupées par unité, en carrés colorés comme côté TC1
   // TC2 : archives des demandes terminées, une rubrique par jour (la plus récente en haut)
-  if (poste === "tc2" && filtreTc2 === "FINIES") {
+  if (estCentre(poste) && filtreTc2 === "FINIES") {
     const jours = [...new Set(tab.sort((a, b) => String(b.maj_le || b.cree_le).localeCompare(String(a.maj_le || a.cree_le))).map(jour))];
     const auj = new Date().toDateString();
     liste.innerHTML = jours.map(j => {
@@ -504,10 +537,10 @@ function rafraichir() {
     }).join("") || `<p class="vide">Aucune demande archivée.</p>`;
     return;
   }
-  liste.innerHTML = (poste === "tc2"
+  liste.innerHTML = (estCentre(poste)
     ? [...CIES, ...new Set(tab.map(d => d.cie).filter(c => !CIES.includes(c)))].map(c => {
         const t = tab.filter(d => d.cie === c); if (!t.length) return "";
-        const aTraiter = t.filter(d => d.statut === "EMISE").length;
+        const aTraiter = t.filter(d => cle(d) === (poste === "s4" ? "EMISE" : "ORDRE")).length;
         return `<div class="unite"><div class="unite-tete"><h3>${esc(NOM[c] || c)}</h3><span>${t.length} demande${t.length > 1 ? "s" : ""}${aTraiter ? ` · ${aTraiter} à traiter` : ""}</span></div>
           <div class="tuiles">${t.map(tuile).join("")}</div></div>`;
       })
@@ -519,9 +552,10 @@ function ecranPostes() {
   const dernier = local.lire("poste", "");
   return `<section><h2>Poste</h2><div class="postes">
       ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${NOM[c]}</button>`).join("")}
+      <button type="button" class="tc2 ${dernier === "s4" ? "choisi" : ""}" data-choix="s4">S4</button>
       <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">TC2</button></div>
     <div id="confirme-poste"></div>
-    <p class="note">Chaque compagnie (TC1) envoie ses demandes au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
+    <p class="note">Chaque compagnie (TC1) envoie ses demandes au S4, qui les valide et donne l'ordre au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
     <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--jaune)"></i>Prise en compte, en préparation</span>
       <span><i style="background:var(--orange)"></i>En cours de livraison</span><span><i style="background:var(--vert)"></i>Reçue et livrée</span><span><i style="background:var(--rouge)"></i>Refusée</span></div></section>`;
 }
@@ -566,7 +600,7 @@ function ecranTc1() {
 }
 
 function ecranTc2() {
-  $("#poste").textContent = "TC2";
+  $("#poste").textContent = nomPoste(poste);
   return `<section><div class="compteurs" id="compteurs"></div>
     <p class="erreur" id="alerte" role="alert"></p>
     <div class="unites" id="liste"></div></section>`;
@@ -641,16 +675,16 @@ function ouvrir() {
   const verrou = local.lire("verrou", "");
   if (verrou && location.hash !== "#" + verrou) history.replaceState(null, "", location.pathname + location.search + "#" + verrou);
   const h = location.hash.slice(1);
-  poste = CIES.includes(h) || h === "tc2" ? h : null;
+  poste = CIES.includes(h) || estCentre(h) ? h : null;
   if (poste) { local.ecrire("poste", poste); if (!verrou) local.ecrire("verrou", poste); majAdresse(); }
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
   const main = $("#principal");
-  main.className = poste === "tc2" ? "tc2" : poste ? "tc1" : "";
-  main.innerHTML = !poste ? ecranPostes() : poste === "tc2" ? ecranTc2() : ecranTc1();
-  if (poste && poste !== "tc2" && vueTc1 === "form") brancherTc1();
+  main.className = estCentre(poste) ? "tc2" : poste ? "tc1" : "";
+  main.innerHTML = !poste ? ecranPostes() : estCentre(poste) ? ecranTc2() : ecranTc1();
+  if (poste && !estCentre(poste) && vueTc1 === "form") brancherTc1();
   rafraichir();
 }
 
@@ -722,7 +756,7 @@ function dessinerQr(canvas, texte) {
 function ecranPartage() {
   $("#poste").textContent = "Partage";
   const main = $("#principal"); main.className = "";
-  const cibles = [["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
+  const cibles = [["s4", "S4"], ["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
   main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
     <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Il contient le code d'accès <b class="code">${esc(code)}</b> : ne le montre qu'aux tiens. Si un code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
     <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr"><canvas data-qr="${k}" aria-label="QR code ${t}"></canvas><b>${t}</b>
@@ -743,7 +777,7 @@ document.addEventListener("click", async e => {
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.choix) {
     $(".postes").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); b.blur();
-    const nom = b.dataset.choix === "tc2" ? "TC2" : NOM[b.dataset.choix];
+    const nom = nomPoste(b.dataset.choix);
     $("#confirme-poste").innerHTML = `<div class="panneau"><p>Cet appareil sera définitivement <b>${esc(nom)}</b>. L'unité ne pourra plus être changée.</p>
       <div class="actions"><button type="button" data-annule-choix="1">Annuler</button><button type="button" class="ok" data-poste="${b.dataset.choix}">Confirmer ${esc(nom)}</button></div></div>`;
     return;
@@ -765,15 +799,18 @@ document.addEventListener("click", async e => {
   if (act === "FERMER") { panneau = null; b.blur(); return rafraichir(); }
   if (!d) return;
   if (act === "ACCEPTER") return transition(d, "PREPARATION");
-  if (act === "MODIFIER" || act === "REFUSER") { panneau = { id: d.id, mode: act === "REFUSER" ? "REF" : "MOD" }; b.blur(); return rafraichir(); }
+  if (act === "VALIDER") return transition(d, "EMISE", { ordre: { le: new Date().toISOString(), par: "S4" }, retour: null, note: "Validée par le S4" });
+  if (act === "MODIFIER" || act === "REFUSER" || act === "SIGNALER") { panneau = { id: d.id, mode: { REFUSER: "REF", SIGNALER: "IMP" }[act] || "MOD" }; b.blur(); return rafraichir(); }
+  if (act === "IMPOSSIBLE") { panneau = null; return transition(d, "EMISE", { ordre: null, retour: { motif: b.dataset.v, le: new Date().toISOString() }, motif: "Impossible : " + b.dataset.v }); }
   if (act === "MOTIF") { panneau = null; return transition(d, "REFUSEE", { motif: b.dataset.v }); }
   if (act === "VALIDER_MODIF") {
     const ch = $("#m-creneau .choisi");
     const modif = { plot: { nom: $("#m-plot").value.trim().toUpperCase(), coordonnees: $("#m-coord").value.trim().toUpperCase(), ...(d.plot?.genre ? { genre: d.plot.genre } : {}) },
       creneau: ch ? plusMinutes(ch.dataset.v) : (d.creneau || "") };
     if (d.type === "RAV") modif.lignes = (d.lignes || []).map((l, i) => ({ quantite: Number($("#m-q" + i).value) || 0 }));
+    const ordre = { le: new Date().toISOString(), par: "S4", itineraire: $("#m-itin").value.trim(), moyens: $("#m-moyens").value.trim(), consigne: $("#m-consigne").value.trim() };
     panneau = null;
-    return transition(d, "PREPARATION", { modif });
+    return transition(d, "EMISE", { modif, ordre, retour: null, note: "Validée et amendée par le S4" });
   }
   if (act === "DEPART") return transition(d, "EN_ROUTE");
   if (act === "LIVRE" || act === "RECU") return transition(d, "LIVREE");
