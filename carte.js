@@ -153,7 +153,7 @@
   .c-moi { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #2f8cff; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
   .leaflet-container { font: 500 12px/1.2 var(--f-titre, sans-serif); }
   .leaflet-control-attribution { background: rgba(16,20,9,.7) !important; color: #9aa38a !important; } .leaflet-control-attribution a { color: #c9cfbb !important; }
-  input[data-coord] { cursor: pointer; }`;
+  input[data-carto] { cursor: pointer; }`;
   document.head.appendChild(css);
 
   function chargerLeaflet() {
@@ -350,11 +350,11 @@
   // ---------- Branchement sur les champs ----------
   // Tout <input data-coord> : toucher le champ ouvre l'outil choisi (le clavier reste accessible depuis l'outil)
   function preparer(r = document) {
-    r.querySelectorAll("input[data-coord]:not([data-carto])").forEach(i => { i.dataset.carto = "1"; i.setAttribute("readonly", ""); });
+    r.querySelectorAll("input[data-coord]:not([data-carto]), #f-coord:not([data-carto]), #m-coord:not([data-carto])").forEach(i => { i.dataset.carto = "1"; i.setAttribute("readonly", ""); });
   }
   new MutationObserver(() => preparer()).observe(document.documentElement, { childList: true, subtree: true });
   document.addEventListener("click", e => {
-    const i = e.target.closest?.("input[data-coord]"); if (!i || i.dataset.clavier) return;
+    const i = e.target.closest?.("input[data-coord], #f-coord, #m-coord"); if (!i || i.dataset.clavier) return;
     e.preventDefault(); champ = i; ouvrirSelonOutil();
   });
   addEventListener("keydown", e => { if (e.key === "Escape" && Carto.ouverte) fermer(); });

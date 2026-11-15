@@ -1,9 +1,11 @@
 // UBERLOG : cache hors réseau. Changer VERSION à chaque mise en ligne.
-const VERSION = "uberlog-v16";
+const VERSION = "uberlog-v15";
+const COQUILLE = ["./", "./index.html", "./manifest.webmanifest", "./icones/icone-192.png", "./icones/icone-512.png", "./icones/apple-touch-icon.png"];
+
+COQUILLE.push("./carte.js");
 // Fonds de carte : cache à part, gardé d'une version à l'autre (zones déjà vues consultables hors réseau)
 const TUILES = "uberlog-tuiles", TUILES_MAX = 4000;
 const estTuile = u => u.hostname === "data.geopf.fr" || u.hostname.endsWith("tile.opentopomap.org");
-const COQUILLE = ["./", "./index.html", "./carte.js", "./manifest.webmanifest", "./icones/icone-192.png", "./icones/icone-512.png", "./icones/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(COQUILLE)).then(() => self.skipWaiting()));
