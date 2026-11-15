@@ -24,5 +24,16 @@ service cloud.firestore {
         && request.resource.data.retiree is bool;
       allow delete: if false;
     }
+    // Messagerie et ordres écrits du TC2 et de ses sections : on ajoute, on ne modifie ni n'efface
+    match /postes/{code}/messages/{id} {
+      allow get, list: if code.size() >= 20;
+      allow create: if code.size() >= 20
+        && request.resource.data.canal in ['chat', 'ordre']
+        && request.resource.data.texte is string && request.resource.data.texte.size() > 0 && request.resource.data.texte.size() <= 2000
+        && request.resource.data.de is string && request.resource.data.de.size() <= 24
+        && request.resource.data.nom is string && request.resource.data.nom.size() <= 30
+        && request.resource.data.le is string;
+      allow update, delete: if false;
+    }
   }
 }
