@@ -6,4 +6,6 @@ Demandes RAV, MEC et SAN des compagnies (Bleu, Furieux, Jonquille, Vert, Noir) a
 - `carte.js` : choix des coordonnées MGRS (carte intégrée à appui long, ou AlpineQuest / Topo Maps+ puis « Coller »)
 - `sw.js` : cache hors réseau (augmenter `VERSION` à chaque mise en ligne)
 - `manifest.webmanifest`, `icones/` : installation sur l'écran d'accueil
-- `firestore.rules` : règles de sécurité de la base Firebase (copie de référence)
+- `firestore.rules` : règles de sécurité de la base Firebase (copie de référence, à recopier dans la console Firebase à chaque changement)
+
+Compagnies : les 5 de base sont dans `index.html` ; l'administrateur en crée d'autres depuis la page QR (bouton « + Nouvelle compagnie » : nom, type, couleur). Elles sont rangées dans `postes/<CODE>/unites` et leur type donne le symbole OTAN.
