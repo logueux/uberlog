@@ -184,12 +184,10 @@
   .msg .t { overflow-wrap: anywhere; white-space: pre-wrap; }
   .saisie { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 8px; }
   textarea { font: 500 16px/1.3 var(--f-titre); color: var(--texte); background: var(--champ); border: 1px solid var(--bord); border-radius: 6px; padding: 10px; width: 100%; min-height: 90px; resize: vertical; }
-  .ordre-ecrit { background: var(--carte); border: 1px solid var(--bord); border-left: 3px solid var(--kaki); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; }
-  .ordre-ecrit.pour-moi { border-left-color: var(--orange); }
-  .ordre-ecrit .tete { font: 700 12px/1.2 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); display: flex; gap: 8px; flex-wrap: wrap; }
-  .ordre-ecrit .tete .h { margin-left: auto; font-family: var(--f-code); color: var(--doux); }
-  .ordre-ecrit .t { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .ordres-liste { display: grid; gap: 8px; margin-top: 12px; }
+  .page-ordres { background: var(--carte); border: 1px solid var(--bord); border-left: 3px solid var(--kaki); border-radius: 6px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.4; min-height: 120px; }
+  .page-ordres-pied { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 8px; flex-wrap: wrap; }
+  .page-ordres-pied .doux { font-size: 12px; }
+  #ordres-texte { min-height: 55vh; font-size: 16px; }
 
   /* Partage */
   .qr-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
@@ -373,6 +371,7 @@ function brancherBase() {
   if (desabonnerUnites) { desabonnerUnites(); desabonnerUnites = null; }
   if (desabonnerMessages) { desabonnerMessages(); desabonnerMessages = null; }
   messages = []; messagesRef = null; messagesConnus = null;
+  if (desabonnerPage) { desabonnerPage(); desabonnerPage = null; } pageRef = null; pageOrdres = null; pageConnue = null;
   demandes = {}; attente = new Set(); collection = null; unitesRef = null; statutsConnus = null; majUnites([]);
   if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
   collection = fs.collection("postes").doc(code).collection("demandes");
@@ -384,6 +383,8 @@ function brancherBase() {
     messages = snap.docs.map(d => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.le).localeCompare(String(b.le)));
     alertesMessages(); rafraichirMessages();
   }, () => {});
+  pageRef = fs.collection("postes").doc(code).collection("pages").doc("ordres");
+  desabonnerPage = pageRef.onSnapshot(d => { pageOrdres = d.exists ? d.data() : null; alertePage(); rafraichirMessages(); }, () => {});
   desabonnerUnites = unitesRef.onSnapshot(snap => {
     majUnites(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     if ($("#principal .qr-grille")) { if (!$("#form-cie")) ecranPartage(); } // page QR : nouvelle compagnie = nouveau QR code
@@ -667,21 +668,29 @@ function panneauModif(d) {
 const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000).toISOString();
 
 // ---------- Messagerie et ordres écrits (TC2 et ses sections) ----------
-let ongletTc2 = "DEMANDES", destOrdre = "";
+let ongletTc2 = "DEMANDES", pageOrdres = null, pageRef = null, desabonnerPage = null, pageConnue = null, editionOrdres = false;
+// Page d'ordres unique : visible par tout le TC2 (sections et groupes), modifiable par le TC2 et les chefs de section
+const peutEditerOrdres = p => p === "tc2" || (estSection(p) && !SECTIONS[p].parent);
 const familleTc2 = p => p === "tc2" || estSection(p);
-// Un ordre écrit est visible de son auteur, de son destinataire (et de la section mère d'un groupe), du TC2, ou de tous s'il est pour tous
-const ordreVisible = (m, p = poste) => !m.pour || m.pour === p || m.de === p || p === "tc2" || SECTIONS[m.pour]?.parent === p;
-const visibles = canal => messages.filter(m => m.canal === canal && (canal === "chat" || ordreVisible(m)));
-const nonLus = canal => { const vu = local.lire(`lu.${canal}.${poste}`, ""); return visibles(canal).filter(m => m.de !== poste && String(m.le) > vu).length; };
-function marquerLu(canal) { const v = visibles(canal), dernier = v.at(-1)?.le; if (dernier) local.ecrire(`lu.${canal}.${poste}`, dernier); }
+const visibles = canal => messages.filter(m => m.canal === canal);
+const nonLus = canal => { const vu = local.lire(`lu.${canal}.${poste}`, "");
+  if (canal === "ordre") return pageOrdres && pageOrdres.de !== poste && String(pageOrdres.le) > vu ? 1 : 0;
+  return visibles(canal).filter(m => m.de !== poste && String(m.le) > vu).length; };
+function marquerLu(canal) { const dernier = canal === "ordre" ? pageOrdres?.le : visibles(canal).at(-1)?.le; if (dernier) local.ecrire(`lu.${canal}.${poste}`, dernier); }
+function alertePage() {
+  if (!familleTc2(poste) || !pageOrdres) return;
+  const avant = pageConnue; pageConnue = pageOrdres.le;
+  if (avant === null || avant === pageOrdres.le || pageOrdres.de === poste) return;
+  signaler({ titre: `Ordres mis à jour par ${pageOrdres.nom}`, texte: pageOrdres.texte.slice(0, 120), couleur: "orange", tag: "ordres" });
+}
 function alertesMessages() {
   if (!familleTc2(poste)) return;
   const premier = messagesConnus === null; if (premier) messagesConnus = new Set();
   for (const m of messages) {
     if (messagesConnus.has(m.id)) continue; messagesConnus.add(m.id);
-    if (premier || m.de === poste || (m.canal === "ordre" && !ordreVisible(m))) continue;
+    if (premier || m.de === poste || m.canal !== "chat") continue;
     if (m.canal === "chat" && ongletTc2 === "CHAT" && document.visibilityState === "visible") continue;
-    signaler({ titre: m.canal === "ordre" ? `Ordre de ${m.nom}${m.pour ? " pour " + nomPoste(m.pour) : ""}` : `Message de ${m.nom}`, texte: m.texte.slice(0, 120), couleur: m.canal === "ordre" && m.pour === poste ? "orange" : "", tag: m.id });
+    signaler({ titre: `Message de ${m.nom}`, texte: m.texte.slice(0, 120), couleur: "", tag: m.id });
   }
 }
 function onglets() {
@@ -695,13 +704,13 @@ function ecranChat() {
     <p class="erreur" id="alerte" role="alert"></p>`;
 }
 function ecranOrdres() {
-  const dests = ["", "tc2", ...Object.keys(SECTIONS)].filter(k => k !== poste);
-  return `<form class="fiche" id="form-ordre" novalidate>
-      <textarea id="ordre-texte" maxlength="2000" placeholder="Texte de l'ordre"></textarea>
-      <div class="champ"><label>Destinataire</label><div class="puces" id="ordre-dest">${dests.map(k => `<button type="button" data-v="${k}" class="${destOrdre === k ? "choisi" : ""}">${k ? esc(nomPoste(k)) : "Tous"}</button>`).join("")}</div></div>
+  if (editionOrdres && peutEditerOrdres(poste)) return `<form class="fiche" id="form-ordres" novalidate>
+      <textarea id="ordres-texte" maxlength="20000" placeholder="Ordres du TC2">${esc(pageOrdres?.texte || "")}</textarea>
       <p class="erreur" id="alerte" role="alert"></p>
-      <button type="submit" class="plein">Émettre l'ordre</button></form>
-    <div class="ordres-liste" id="fil-ordres"></div>`;
+      <div class="actions"><button type="button" id="ordres-annuler">Annuler</button><button type="submit" class="ok">Enregistrer</button></div></form>`;
+  return `<div class="page-ordres" id="page-ordres"></div>
+    <div class="page-ordres-pied"><span class="doux" id="ordres-maj"></span>${peutEditerOrdres(poste) ? `<button type="button" class="plein" id="ordres-modifier">Modifier</button>` : ""}</div>
+    <p class="erreur" id="alerte" role="alert"></p>`;
 }
 function rafraichirMessages() {
   if (!familleTc2(poste)) return;
@@ -714,26 +723,29 @@ function rafraichirMessages() {
     if (bas || !fil.dataset.vu) { fil.scrollTop = fil.scrollHeight; fil.dataset.vu = "1"; }
     marquerLu("chat"); const o2 = $(".onglets"); if (o2) o2.outerHTML = onglets();
   }
-  const fo = $("#fil-ordres");
-  if (fo) {
-    fo.innerHTML = visibles("ordre").slice().reverse().map(m => `<article class="ordre-ecrit ${m.pour === poste ? "pour-moi" : ""}"><div class="tete"><span>${esc(m.nom)}</span><span>→ ${m.pour ? esc(nomPoste(m.pour)) : "Tous"}</span><span class="h">${jhm(m.le)}</span></div><div class="t">${esc(m.texte)}</div></article>`).join("")
-      || `<p class="vide">Aucun ordre écrit.</p>`;
+  const po = $("#page-ordres");
+  if (po) {
+    po.innerHTML = pageOrdres?.texte ? esc(pageOrdres.texte) : `<span class="doux">Aucun ordre pour le moment.</span>`;
+    $("#ordres-maj").textContent = pageOrdres ? `Modifié par ${pageOrdres.nom} · ${jhm(pageOrdres.le)}` : "";
     marquerLu("ordre"); const o2 = $(".onglets"); if (o2) o2.outerHTML = onglets();
   }
 }
 function envoyerMessage(canal, texte, pour) {
   if (!messagesRef) return alerte("Base non configurée.");
-  const m = { canal, de: poste, nom: nomPoste(poste), le: new Date().toISOString(), texte, ...(canal === "ordre" ? { pour: pour || "" } : {}) };
+  const m = { canal, de: poste, nom: nomPoste(poste), le: new Date().toISOString(), texte };
   messagesRef.doc(nouvelId()).set(m).catch(e => alerte(e?.code === "permission-denied" ? "Envoi refusé par la base : publier les nouvelles règles Firebase." : "Envoi impossible : " + (e?.message || e)));
 }
 function brancherMessages() {
   const fm = $("#form-msg");
   if (fm) fm.onsubmit = e => { e.preventDefault(); const t = $("#msg-texte").value.trim(); if (!t) return; $("#msg-texte").value = ""; envoyerMessage("chat", t); $("#msg-texte").focus(); };
-  const fo = $("#form-ordre");
+  $("#ordres-modifier") && ($("#ordres-modifier").onclick = () => { editionOrdres = true; ouvrir(); $("#ordres-texte")?.focus(); });
+  const fo = $("#form-ordres");
   if (fo) {
-    $("#ordre-dest").onclick = e => { const b = e.target.closest("button"); if (!b) return; destOrdre = b.dataset.v; $("#ordre-dest").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); };
-    fo.onsubmit = e => { e.preventDefault(); const t = $("#ordre-texte").value.trim(); if (!t) return $("#alerte").textContent = "Écrire le texte de l'ordre.";
-      $("#ordre-texte").value = ""; $("#alerte").textContent = ""; envoyerMessage("ordre", t, destOrdre); };
+    $("#ordres-annuler").onclick = () => { editionOrdres = false; ouvrir(); };
+    fo.onsubmit = e => { e.preventDefault(); if (!pageRef) return alerte("Base non configurée.");
+      const p = { texte: $("#ordres-texte").value.replace(/\s+$/, ""), de: poste, nom: nomPoste(poste), le: new Date().toISOString() };
+      pageRef.set(p).catch(e => alerte(e?.code === "permission-denied" ? "Enregistrement refusé par la base : publier les nouvelles règles Firebase." : "Enregistrement impossible : " + (e?.message || e)));
+      pageOrdres = p; pageConnue = p.le; editionOrdres = false; ouvrir(); };
   }
 }
 
@@ -928,7 +940,7 @@ function ouvrir() {
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   const perso = poste && !(poste in DE_BASE) && UNITES[poste]?.couleur; // fond des compagnies créées : leur couleur assombrie
   ["--fond-profil", "--sur", "--sur-fort"].forEach((v, i) => perso ? document.body.style.setProperty(v, [sombre(perso), "#e3e6dc", "#fff"][i]) : document.body.style.removeProperty(v));
-  if (poste !== dernierPoste) { vueTc1 = "accueil"; ongletTc2 = "DEMANDES"; destOrdre = ""; messagesConnus = null; alertesMessages(); ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
+  if (poste !== dernierPoste) { vueTc1 = "accueil"; ongletTc2 = "DEMANDES"; editionOrdres = false; messagesConnus = null; alertesMessages(); pageConnue = pageOrdres?.le ?? null; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
   const main = $("#principal");
@@ -1104,7 +1116,7 @@ document.addEventListener("click", async e => {
     const ouvert = joursOuverts.has(j) || (j === auj && !joursFermes.has(j));
     if (ouvert) { joursOuverts.delete(j); joursFermes.add(j); } else { joursFermes.delete(j); joursOuverts.add(j); }
     b.blur(); return rafraichir(); }
-  if (b.dataset.onglet) { ongletTc2 = b.dataset.onglet; b.blur(); ouvrir(); if (ongletTc2 === "CHAT") $("#fil") && ($("#fil").scrollTop = 1e9); return; }
+  if (b.dataset.onglet) { ongletTc2 = b.dataset.onglet; editionOrdres = false; b.blur(); ouvrir(); if (ongletTc2 === "CHAT") $("#fil") && ($("#fil").scrollTop = 1e9); return; }
   if (b.dataset.filtre) { filtreTc2 = filtreTc2 === b.dataset.filtre ? "ACTIFS" : b.dataset.filtre; rafraichir(); return; }
   if (b.closest("#m-creneau")) { $("#m-creneau").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); return; }
   const act = b.dataset.act; if (!act) return;
