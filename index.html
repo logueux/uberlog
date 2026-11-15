@@ -177,6 +177,13 @@
   .qr canvas { width: 100%; max-width: 180px; height: auto; image-rendering: pixelated; border-radius: 4px; }
   .qr b { font-size: 16px; letter-spacing: .12em; text-transform: uppercase; }
   .qr button { padding: 6px 10px; min-height: 34px; font-size: 12px; }
+  .qr.neuve { border-color: var(--kaki); box-shadow: 0 0 0 2px var(--kaki); }
+  .qr small { font-size: 12px; }
+  select { font: 600 17px/1.2 var(--f-titre); color: var(--texte); background: var(--champ); border: 1px solid var(--bord); border-radius: 6px; padding: 10px; width: 100%; min-width: 0; min-height: 44px; }
+  .apercu { display: flex; gap: 12px; align-items: center; } .apercu b { font-size: 20px; letter-spacing: .1em; text-transform: uppercase; }
+  .teintes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .teintes button { background: var(--t); min-height: 44px; padding: 0; border: 2px solid var(--bord); }
+  .teintes button.choisi { background: var(--t); border-color: var(--texte); box-shadow: 0 0 0 2px var(--kaki); }
   .legende { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--doux); }
   /* Couleur de fond propre à chaque profil (les carrés restent foncés pour garder le code couleur d'état lisible) */
   body { --sur: var(--doux); --sur-fort: var(--texte); }
@@ -230,8 +237,32 @@ const FIREBASE = {
   appId: "1:707324663426:web:8c82f212f79053ff57c69b",
 };
 const LIEN = location.origin + location.pathname;
-const CIES = ["bleu", "furieux", "jonquille", "vert", "noir"];
-const NOM = { bleu: "Bleu", furieux: "Furieux", jonquille: "Jonquille", vert: "Vert", noir: "Noir" };
+// Compagnies : celles de base, plus celles créées par l'administrateur (base : postes/<CODE>/unites/<id>).
+// Le type choisi donne le symbole OTAN ; une compagnie retirée garde ses demandes mais disparaît des listes.
+const TYPES_CIE = [
+  ["Infanterie", [["inf_meca", "Infanterie mécanisée"], ["inf_moto", "Infanterie motorisée"], ["inf", "Infanterie à pied"], ["inf_para", "Infanterie parachutiste"], ["inf_mont", "Infanterie de montagne"]]],
+  ["Appui", [["appui", "Compagnie d'appui"], ["mortiers", "Mortiers"], ["atk", "Antichar (ATK)"], ["tireurs", "Tireurs d'élite"], ["reco", "Reconnaissance (SRR)"]]],
+  ["Cavalerie", [["cav_chars", "Escadron de chars"], ["cav_blinde", "Escadron blindé de reco"], ["cav_eclairage", "Escadron d'éclairage"]]],
+  ["Génie et artillerie", [["genie", "Génie de combat"], ["artillerie", "Artillerie"], ["dsa", "Défense sol-air"], ["drones", "Drones"]]],
+  ["Commandement et soutien", [["ccl", "CCL (commandement et logistique)"], ["trans", "Transmissions"], ["rens", "Renseignement"], ["sante", "Santé"], ["maint", "Maintenance"], ["ravit", "Ravitaillement / transport"], ["nrbc", "NRBC"]]],
+];
+const NOM_TYPE = Object.fromEntries(TYPES_CIE.flatMap(([, l]) => l));
+const TEINTES = [["#2f62e0", "Bleu"], ["#e7c21d", "Jaune"], ["#2f9a44", "Vert"], ["#000000", "Noir"], ["#d22b2b", "Rouge"], ["#f07c1a", "Orange"],
+  ["#7a3fc4", "Violet"], ["#e05a9c", "Rose"], ["#1fb5c9", "Cyan"], ["#7a4a22", "Marron"], ["#8a8f94", "Gris"], ["#f2f2f2", "Blanc"]];
+const DE_BASE = { bleu: { nom: "Bleu", type: "inf_meca" }, furieux: { nom: "Furieux", type: "inf_meca" }, jonquille: { nom: "Jonquille", type: "inf_meca" },
+  vert: { nom: "Vert", type: "inf_meca" }, noir: { nom: "Noir", type: "appui" } };
+let UNITES = { ...DE_BASE }, CIES = Object.keys(DE_BASE);
+const NOM = Object.fromEntries(Object.entries(DE_BASE).map(([k, u]) => [k, u.nom]));
+const RESERVES = ["s4", "tc2", "postes", "ami"];
+const identifiant = nom => nom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
+const texteSur = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); return 0.299 * r + 0.587 * g + 0.114 * b > 140 ? "#000" : "#fff"; };
+const sombre = hex => "#" + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.4).toString(16).padStart(2, "0")).join("");
+function majUnites(docs) {
+  UNITES = { ...DE_BASE };
+  docs.sort((a, b) => String(a.cree_le).localeCompare(String(b.cree_le))).forEach(u => { if (u.id in DE_BASE || RESERVES.includes(u.id)) return; UNITES[u.id] = u; });
+  CIES = Object.keys(UNITES).filter(k => !UNITES[k].retiree);
+  for (const [k, u] of Object.entries(UNITES)) { NOM[k] = u.nom; if (!(k in DE_BASE)) COULEURS[k] = { f: u.couleur, t: texteSur(u.couleur) }; }
+}
 const TYPES = { RAV: "Ravitaillement", MEC: "Mécanique", SAN: "Sanitaire" };
 const STATUTS = { EMISE: "Émise", PREPARATION: "En préparation", EN_ROUTE: "En livraison", LIVREE: "Livrée", REFUSEE: "Refusée", ANNULEE: "Annulée" };
 const FINIS = ["LIVREE", "REFUSEE", "ANNULEE"];
@@ -283,7 +314,7 @@ function majAdresse() {
   const s = q.toString(); history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + location.hash);
 }
 let code = local.lire("code", "");
-let collection = null, demandes = {}, attente = new Set(), liaison = "connexion", desabonner = null;
+let collection = null, unitesRef = null, desabonnerUnites = null, demandes = {}, attente = new Set(), liaison = "connexion", desabonner = null;
 const configOk = FIREBASE.apiKey && FIREBASE.apiKey !== "A_REMPLACER" && FIREBASE.projectId;
 let fs = null;
 if (configOk && window.firebase) {
@@ -299,10 +330,18 @@ function majEtat() {
 }
 function brancherBase() {
   if (desabonner) { desabonner(); desabonner = null; }
-  demandes = {}; attente = new Set(); collection = null; statutsConnus = null;
+  if (desabonnerUnites) { desabonnerUnites(); desabonnerUnites = null; }
+  demandes = {}; attente = new Set(); collection = null; unitesRef = null; statutsConnus = null; majUnites([]);
   if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
   collection = fs.collection("postes").doc(code).collection("demandes");
   liaison = "connexion"; majEtat();
+  unitesRef = fs.collection("postes").doc(code).collection("unites");
+  desabonnerUnites = unitesRef.onSnapshot(snap => {
+    majUnites(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    if ($("#principal .qr-grille")) { if (!$("#form-cie")) ecranPartage(); } // page QR : nouvelle compagnie = nouveau QR code
+    else if (!poste) ouvrir(); // liste des postes, ou lien d'une compagnie qui vient d'arriver
+    else rafraichir();
+  }, () => {});
   desabonner = collection.onSnapshot({ includeMetadataChanges: true }, snap => {
     demandes = {}; attente = new Set();
     snap.forEach(d => { demandes[d.id] = d.data(); if (d.metadata.hasPendingWrites) attente.add(d.id); });
@@ -416,7 +455,7 @@ const joursOuverts = new Set(), joursFermes = new Set();
 const creneauTxt = c => c ? jhm(c) : "Dès que possible";
 // Symboles tactiques OTAN (APP-6D), dessinés en SVG, aux couleurs de chaque compagnie.
 // Cadre ami (rectangle), infanterie (croix), mécanisée (ovale chenillé), échelon compagnie (|).
-// Cie d'appui (Noir) : même symbole, mention « APP » en haut du cadre. TC : icône ravitaillement (trait bas).
+// Chaque type de compagnie a son icône APP-6 (voir icone()). Cie d'appui : mention « APP ». TC : icône ravitaillement (trait bas).
 // Points (plots) : symboles de point de soutien APP-6 (LRP, MCP, CCP, MA) aux couleurs de la compagnie.
 const COULEURS = {
   bleu: { f: "#2f62e0", t: "#fff" }, furieux: { f: "#e7c21d", t: "#000" }, jonquille: { f: "#2f9a44", f2: "#e7c21d", t: "#000" },
@@ -428,8 +467,29 @@ function remplir(c, forme) { // forme : attributs SVG d'un polygone/rectangle ; 
   return c.f2 ? `<${forme} fill="${c.f}"/><clipPath id="CLIP"><${forme}/></clipPath><polygon clip-path="url(#CLIP)" points="0,0 200,0 200,200" fill="${c.f2}"/>` : `<${forme} fill="${c.f}"/>`;
 }
 let nSym = 0;
+// Icône du type d'unité dans le cadre (x 25 à 175, y 50 à 150)
+function icone(type, c, id, trait) {
+  const t = c.t, txt = (m, y = 72, taille = 22) => `<text x="100" y="${y}" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="${taille}" fill="${t}">${m}</text>`;
+  const croix = `<path d="M25,50 L175,150 M175,50 L25,150" ${trait}/>`, diag = `<path d="M25,150 L175,50" ${trait}/>`;
+  const ovale = `${remplir(c, `rect x="60" y="80" width="80" height="40" rx="20"`).replaceAll("CLIP", id + "o")}<rect x="60" y="80" width="80" height="40" rx="20" ${trait}/>`;
+  const plein = `fill="${t}"`;
+  return ({
+    inf_meca: croix + ovale, inf_moto: croix + `<path d="M100,50 V150" ${trait}/>`, inf: croix,
+    inf_para: croix + `<path d="M72,146 Q100,118 128,146" ${trait}/>`, inf_mont: croix + `<path d="M84,150 L100,124 L116,150 Z" ${plein}/>`,
+    appui: croix + ovale + txt("APP"), mortiers: `<circle cx="100" cy="128" r="9" ${trait}/><path d="M100,119 V64 M86,80 L100,62 L114,80" ${trait}/>`,
+    atk: `<path d="M25,150 L100,50 L175,150" ${trait}/>`, tireurs: croix + txt("TE"), reco: diag + txt("RECO", 140, 20),
+    cav_chars: ovale, cav_blinde: diag + ovale, cav_eclairage: diag,
+    genie: `<path d="M62,118 V84 H138 V118 M100,84 V118" ${trait}/>`, artillerie: `<circle cx="100" cy="100" r="15" ${plein}/>`,
+    dsa: `<path d="M40,150 Q100,90 160,150" ${trait}/>`, drones: `<path d="M55,88 L100,110 L145,88 L145,100 L100,122 L55,100 Z" ${plein}/>`,
+    ccl: `<path d="M25,125 H175" ${trait}/>` + txt("CCL", 110, 36), trans: `<path d="M25,50 L95,112 L105,88 L175,150" ${trait} stroke-linejoin="round"/>`,
+    rens: txt("MI", 114, 40), sante: `<path d="M100,62 V138 M62,100 H138" ${trait}/>`,
+    maint: `<path d="M68,100 H132 M68,84 A16,16 0 0 1 68,116 M132,84 A16,16 0 0 0 132,116" ${trait}/>`,
+    ravit: `<path d="M25,125 H175" ${trait}/>`, nrbc: txt("NRBC", 112, 34),
+  })[type] ?? croix + ovale;
+}
 function symbole(sorte, qui, taille = 40, titre = "") {
-  const c = COULEURS[qui] || COULEURS.ami, t = c.t, id = "s" + (++nSym);
+  const u = typeof qui === "object" ? qui : UNITES[qui]; // qui : identifiant de compagnie, ou unité en cours de création
+  const c = typeof qui === "object" ? { f: qui.couleur, t: texteSur(qui.couleur) } : COULEURS[qui] || COULEURS.ami, t = c.t, id = "s" + (++nSym);
   const trait = `stroke="${t}" stroke-width="7" fill="none"`;
   let corps, vb;
   if (sorte === "point") { // point de soutien : épingle avec code
@@ -441,19 +501,17 @@ function symbole(sorte, qui, taille = 40, titre = "") {
     const forme = `rect x="25" y="50" width="150" height="100"`;
     corps = remplir(c, forme).replaceAll("CLIP", id);
     if (sorte === "cie") {
-      corps += `<path d="M25,50 L175,150 M175,50 L25,150" ${trait}/>${remplir(c, `rect x="60" y="80" width="80" height="40" rx="20"`).replaceAll("CLIP", id + "o")}<rect x="60" y="80" width="80" height="40" rx="20" ${trait}/>`
-        + `<path d="M100,10 V44" stroke="currentColor" stroke-width="7"/>`;
-      if (qui === "noir") corps += `<text x="100" y="72" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="22" fill="${t}">APP</text>`;
+      corps += icone(u?.type, c, id, trait) + `<path d="M100,10 V44" stroke="currentColor" stroke-width="7"/>`;
     } else { // train de combat : icône ravitaillement + TC1 / TC2
       corps += `<path d="M25,125 H175" ${trait}/><text x="100" y="110" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="40" fill="${t}">${titre}</text>`;
     }
     corps += `<rect x="25" y="50" width="150" height="100" ${trait}/>`;
     vb = "15 5 170 150";
   }
-  return `<svg class="sym" viewBox="${vb}" height="${taille}" role="img" aria-label="${esc(sorte === "point" ? POINTS_NOM[titre] || titre : (NOM[qui] || "") + " " + titre)}">${corps}</svg>`;
+  return `<svg class="sym" viewBox="${vb}" height="${taille}" role="img" aria-label="${esc(sorte === "point" ? POINTS_NOM[titre] || titre : (u?.nom || "") + " " + (titre || NOM_TYPE[u?.type] || ""))}">${corps}</svg>`;
 }
-const symCie = (c, taille) => CIES.includes(c) ? symbole("cie", c, taille) : "";
-const symPoste = (p, taille) => p === "tc2" ? symbole("tc", "ami", taille, "TC2") : CIES.includes(p) ? symbole("tc", p, taille, "TC1") : "";
+const symCie = (c, taille) => c in UNITES ? symbole("cie", c, taille) : "";
+const symPoste = (p, taille) => p === "tc2" ? symbole("tc", "ami", taille, "TC2") : p in UNITES ? symbole("tc", p, taille, "TC1") : "";
 const symPlot = (d, taille = 34) => symbole("point", d.cie, taille, POINTS[d.plot?.genre] || POINTS[d.type] || "LRP");
 // ÉVASAN : on ne parle pas de plot mais de nid de blessés ou de nid de DCD
 const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
@@ -603,7 +661,7 @@ function ecranPostes() {
   $("#poste").textContent = "Choix du poste";
   const dernier = local.lire("poste", "");
   return `<section><h2>Poste</h2><div class="postes">
-      ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${symCie(c, 44)}${NOM[c]}</button>`).join("")}
+      ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${symCie(c, 44)}${esc(NOM[c])}</button>`).join("")}
       <button type="button" class="tc2 ${dernier === "s4" ? "choisi" : ""}" data-choix="s4">S4</button>
       <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">${symPoste("tc2", 34)}TC2</button></div>
     <div id="confirme-poste"></div>
@@ -728,9 +786,11 @@ function ouvrir() {
   const verrou = estAdmin() ? "" : local.lire("verrou", "");
   if (verrou && location.hash !== "#" + verrou) history.replaceState(null, "", location.pathname + location.search + "#" + verrou);
   const h = location.hash.slice(1);
-  poste = CIES.includes(h) || estCentre(h) ? h : null;
+  poste = h in UNITES || estCentre(h) ? h : null;
   if (poste) { local.ecrire("poste", poste); if (!verrou && !estAdmin()) local.ecrire("verrou", poste); majAdresse(); }
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
+  const perso = poste && !(poste in DE_BASE) && UNITES[poste]?.couleur; // fond des compagnies créées : leur couleur assombrie
+  ["--fond-profil", "--sur", "--sur-fort"].forEach((v, i) => perso ? document.body.style.setProperty(v, [sombre(perso), "#e3e6dc", "#fff"][i]) : document.body.style.removeProperty(v));
   if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
@@ -806,14 +866,52 @@ function dessinerQr(canvas, texte) {
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) c.fillRect((x + m) * t, (y + m) * t, t, t);
   return true;
 }
-function ecranPartage() {
+// Création d'une compagnie (administrateur) : nom, type (symbole OTAN), couleur ; son QR code apparaît aussitôt
+let qrNeuf = "", brouillonCie = { nom: "", type: "inf_meca", couleur: TEINTES[4][0] };
+function formCie() {
+  const b = brouillonCie;
+  return `<form class="fiche" id="form-cie" novalidate>
+    <div class="apercu" id="cie-apercu">${apercuCie()}</div>
+    <div class="champ"><label for="cie-nom">Nom (indicatif)</label><input id="cie-nom" maxlength="20" autocomplete="off" autocapitalize="words" placeholder="Rouge" value="${esc(b.nom)}"></div>
+    <div class="champ"><label for="cie-type">Type</label><select id="cie-type">${TYPES_CIE.map(([g, l]) => `<optgroup label="${esc(g)}">${l.map(([k, t]) => `<option value="${k}" ${k === b.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</optgroup>`).join("")}</select></div>
+    <div class="champ"><label>Couleur</label><div class="teintes" id="cie-teintes">${TEINTES.map(([h, n]) => `<button type="button" data-teinte="${h}" class="${h === b.couleur ? "choisi" : ""}" style="--t:${h}" aria-label="${n}" title="${n}"></button>`).join("")}</div></div>
+    <p class="erreur" id="cie-erreur" role="alert"></p>
+    <div class="actions"><button type="button" id="cie-annuler">Annuler</button><button type="submit" class="ok">Créer et générer le QR code</button></div></form>`;
+}
+const apercuCie = () => `${symbole("cie", { ...brouillonCie, nom: brouillonCie.nom || "Nouvelle compagnie" }, 56)}<div><b>${esc(brouillonCie.nom || "Nouvelle compagnie")}</b><div class="doux">${esc(NOM_TYPE[brouillonCie.type])}</div></div>`;
+function brancherCie() {
+  const f = $("#form-cie"); if (!f) return;
+  const maj = () => { brouillonCie.nom = $("#cie-nom").value; brouillonCie.type = $("#cie-type").value; $("#cie-apercu").innerHTML = apercuCie(); };
+  $("#cie-nom").oninput = maj; $("#cie-type").onchange = maj;
+  $("#cie-teintes").onclick = e => { const b = e.target.closest("button"); if (!b) return;
+    $("#cie-teintes").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); brouillonCie.couleur = b.dataset.teinte; maj(); };
+  $("#cie-annuler").onclick = () => ecranPartage();
+  f.onsubmit = async e => { e.preventDefault(); maj();
+    const err = $("#cie-erreur"), nom = brouillonCie.nom.trim().replace(/\s+/g, " "), id = identifiant(nom);
+    if (!nom) return err.textContent = "Donner un nom à la compagnie.";
+    if (id.length < 2 || RESERVES.includes(id)) return err.textContent = "Nom impossible : en choisir un autre.";
+    if (id in UNITES && !UNITES[id].retiree) return err.textContent = `${NOM[id]} existe déjà.`;
+    if (!unitesRef) return err.textContent = "Base non configurée.";
+    const u = { nom: nom.charAt(0).toUpperCase() + nom.slice(1), type: brouillonCie.type, couleur: brouillonCie.couleur, retiree: false, cree_le: UNITES[id]?.cree_le || new Date().toISOString() };
+    // écriture locale immédiate (hors liaison comprise), envoyée dès que possible
+    unitesRef.doc(id).set(u).catch(e => alerte(e?.code === "permission-denied" ? "Création refusée par la base : publier les nouvelles règles Firebase." : "Création impossible : " + (e?.message || e)));
+    majUnites([...Object.entries(UNITES).filter(([k]) => !(k in DE_BASE) && k !== id).map(([k, x]) => ({ ...x, id: k })), { ...u, id }]);
+    brouillonCie = { nom: "", type: u.type, couleur: u.couleur }; qrNeuf = id;
+    ecranPartage();
+    $("#qr-" + id)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+}
+function ecranPartage(apres) {
   $("#poste").textContent = "Partage";
   const main = $("#principal"); main.className = "";
   const cibles = [["s4", "S4"], ["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
   main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
     <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Il contient le code d'accès <b class="code">${esc(code)}</b> : ne le montre qu'aux tiens. Si un code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
-    <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr"><canvas data-qr="${k}" aria-label="QR code ${t}"></canvas><b>${t}</b>
-      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button></div>`).join("")}</div>
+    ${estAdmin() ? `<div id="zone-cie">${apres?.form ? formCie() : `<button type="button" class="plein" id="nouvelle-cie">+ Nouvelle compagnie</button>`}</div>` : ""}
+    <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr ${qrNeuf === k ? "neuve" : ""}" id="qr-${k}">${k in UNITES ? symCie(k, 36) : ""}<canvas data-qr="${k}" aria-label="QR code ${esc(t)}"></canvas><b>${esc(t)}</b>
+      ${k in UNITES && UNITES[k].type ? `<small class="doux">${esc(NOM_TYPE[UNITES[k].type] || "")}</small>` : ""}
+      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button>
+      ${estAdmin() && k in UNITES && !(k in DE_BASE) ? `<button type="button" class="ko" data-retire="${k}">Retirer</button>` : ""}</div>`).join("")}</div>
     <p class="note" id="qr-erreur"></p>
     <div class="actions"><button type="button" data-poste="${esc(local.lire("poste", "") || "")}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div>
     <h2>Mode administrateur</h2>
@@ -821,6 +919,7 @@ function ecranPartage() {
       <button type="button" id="admin-quitter">Quitter le mode administrateur</button>`
     : `<form class="fiche" id="form-admin" novalidate><input id="admin-code" autocomplete="off" autocapitalize="characters" placeholder="Code administrateur">
       <button type="submit" class="plein">Activer sur cet appareil</button><p class="erreur" id="admin-erreur" role="alert"></p></form>`}</section>`;
+  brancherCie();
   const fa = $("#form-admin");
   if (fa) fa.onsubmit = async e => { e.preventDefault();
     try { const h = await empreinte($("#admin-code").value.trim().toUpperCase());
@@ -837,6 +936,11 @@ document.addEventListener("click", async e => {
   if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); if (!estAdmin() && local.lire("verrou", "")) return ouvrir(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
   if (b.id === "btn-alertes") return basculerAlertes();
   if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
+  if (b.id === "nouvelle-cie") { ecranPartage({ form: true }); $("#cie-nom")?.focus(); return; }
+  if (b.dataset.retire) { const id = b.dataset.retire;
+    if (!b.dataset.arme) { b.dataset.arme = "1"; b.textContent = "Confirmer le retrait"; return; }
+    unitesRef?.doc(id).update({ retiree: true }).catch(() => alerte("Retrait impossible."));
+    return; }
   if (b.id === "admin-quitter") { local.ecrire("admin", ""); if (poste) local.ecrire("verrou", poste); return ecranPartage(); }
   if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.choix) {

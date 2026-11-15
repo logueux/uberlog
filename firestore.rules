@@ -1,14 +1,27 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Les demandes sont rangées sous un code d'accès secret : postes/<CODE>/demandes/<id>.
+    // Tout est rangé sous un code d'accès secret : postes/<CODE>/...
     // Sans le code, impossible de lister ou de lire quoi que ce soit (la liste des codes n'est pas lisible).
+    function idCie(c) {
+      return c is string && c.matches('[a-z0-9-]{2,24}') && !(c in ['s4', 'tc2', 'postes', 'ami']);
+    }
     match /postes/{code}/demandes/{id} {
       allow get, list: if code.size() >= 20;
       allow create, update: if code.size() >= 20
         && request.resource.data.type in ['RAV', 'MEC', 'SAN']
-        && request.resource.data.cie in ['bleu', 'furieux', 'jonquille', 'vert', 'noir']
+        && idCie(request.resource.data.cie)
         && request.resource.data.statut in ['EMISE', 'PREPARATION', 'EN_ROUTE', 'LIVREE', 'REFUSEE', 'ANNULEE'];
+      allow delete: if false;
+    }
+    // Compagnies créées par l'administrateur (les 5 de base sont dans l'application)
+    match /postes/{code}/unites/{cie} {
+      allow get, list: if code.size() >= 20;
+      allow create, update: if code.size() >= 20 && idCie(cie)
+        && request.resource.data.nom is string && request.resource.data.nom.size() > 0 && request.resource.data.nom.size() <= 20
+        && request.resource.data.type is string && request.resource.data.type.matches('[a-z_]{2,20}')
+        && request.resource.data.couleur is string && request.resource.data.couleur.matches('#[0-9a-f]{6}')
+        && request.resource.data.retiree is bool;
       allow delete: if false;
     }
   }
