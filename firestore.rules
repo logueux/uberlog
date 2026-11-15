@@ -24,16 +24,26 @@ service cloud.firestore {
         && request.resource.data.retiree is bool;
       allow delete: if false;
     }
-    // Messagerie et ordres écrits du TC2 et de ses sections : on ajoute, on ne modifie ni n'efface
+    // Messagerie du TC2 et de ses sections : on ajoute, on ne modifie ni n'efface
     match /postes/{code}/messages/{id} {
       allow get, list: if code.size() >= 20;
       allow create: if code.size() >= 20
-        && request.resource.data.canal in ['chat', 'ordre']
+        && request.resource.data.canal == 'chat'
         && request.resource.data.texte is string && request.resource.data.texte.size() > 0 && request.resource.data.texte.size() <= 2000
         && request.resource.data.de is string && request.resource.data.de.size() <= 24
         && request.resource.data.nom is string && request.resource.data.nom.size() <= 30
         && request.resource.data.le is string;
       allow update, delete: if false;
+    }
+    // Page d'ordres du TC2 (un seul document : pages/ordres), modifiée par le TC2 et les chefs de section
+    match /postes/{code}/pages/{page} {
+      allow get, list: if code.size() >= 20;
+      allow create, update: if code.size() >= 20 && page == 'ordres'
+        && request.resource.data.texte is string && request.resource.data.texte.size() <= 20000
+        && request.resource.data.de in ['tc2', 'tc2-pelican', 'tc2-alpha', 'tc2-lima', 'tc2-kilo']
+        && request.resource.data.nom is string && request.resource.data.nom.size() <= 30
+        && request.resource.data.le is string;
+      allow delete: if false;
     }
   }
 }
