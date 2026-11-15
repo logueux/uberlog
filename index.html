@@ -70,6 +70,7 @@
   /* Sélection du poste */
   .postes { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .postes button { min-height: 76px; font-size: 22px; letter-spacing: .12em; }
+  .postes button { display: grid; place-items: center; gap: 6px; }
   .postes .tc2 { grid-column: 1 / -1; background: var(--kaki-fonce); border-color: var(--kaki); color: var(--kaki); }
   .note { color: var(--doux); font-size: 14px; max-width: 60ch; }
 
@@ -107,7 +108,10 @@
   .contenu { font-size: 16px; }
   .contenu .n { font-family: var(--f-code); font-variant-numeric: tabular-nums; }
   .contenu s { color: var(--doux); }
-  .plot { font-size: 15px; } .plot .code { font-family: var(--f-code); font-size: 14px; }
+  .sym { display: inline-block; flex: none; vertical-align: middle; color: var(--sur-fort, var(--texte)); overflow: visible; }
+  #poste .sym, .unite-tete h3 .sym, .qui .sym { margin-right: 8px; vertical-align: -0.25em; }
+  .unite-tete h3 .sym { vertical-align: middle; }
+  .plot { font-size: 15px; display: flex; gap: 8px; align-items: center; } .plot .code { font-family: var(--f-code); font-size: 14px; }
   .doux { color: var(--doux); font-size: 14px; }
   .attente { color: var(--jaune); font: 700 12px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; }
   .actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
@@ -410,18 +414,63 @@ const blesses = s => [["A", s.a], ["B", s.b], ["C", s.c], ["UA", s.ua], ["UR", s
 const jour = d => new Date(d.maj_le || d.cree_le).toDateString();
 const joursOuverts = new Set(), joursFermes = new Set();
 const creneauTxt = c => c ? jhm(c) : "Dès que possible";
+// Symboles tactiques OTAN (APP-6D), dessinés en SVG, aux couleurs de chaque compagnie.
+// Cadre ami (rectangle), infanterie (croix), mécanisée (ovale chenillé), échelon compagnie (|).
+// Cie d'appui (Noir) : même symbole, mention « APP » en haut du cadre. TC : icône ravitaillement (trait bas).
+// Points (plots) : symboles de point de soutien APP-6 (LRP, MCP, CCP, MA) aux couleurs de la compagnie.
+const COULEURS = {
+  bleu: { f: "#2f62e0", t: "#fff" }, furieux: { f: "#e7c21d", t: "#000" }, jonquille: { f: "#2f9a44", f2: "#e7c21d", t: "#000" },
+  vert: { f: "#2f9a44", t: "#000" }, noir: { f: "#000", t: "#fff" }, ami: { f: "#80e0ff", t: "#000" },
+};
+const POINTS = { RAV: "LRP", MEC: "MCP", NID_BLESSES: "CCP", NID_DCD: "MA" };
+const POINTS_NOM = { LRP: "Plot de ravitaillement (LRP)", MCP: "Point de regroupement du matériel (MCP)", CCP: "Nid de blessés (CCP)", MA: "Nid de DCD (MA)" };
+function remplir(c, forme) { // forme : attributs SVG d'un polygone/rectangle ; Jonquille = vert et jaune coupés en diagonale
+  return c.f2 ? `<${forme} fill="${c.f}"/><clipPath id="CLIP"><${forme}/></clipPath><polygon clip-path="url(#CLIP)" points="0,0 200,0 200,200" fill="${c.f2}"/>` : `<${forme} fill="${c.f}"/>`;
+}
+let nSym = 0;
+function symbole(sorte, qui, taille = 40, titre = "") {
+  const c = COULEURS[qui] || COULEURS.ami, t = c.t, id = "s" + (++nSym);
+  const trait = `stroke="${t}" stroke-width="7" fill="none"`;
+  let corps, vb;
+  if (sorte === "point") { // point de soutien : épingle avec code
+    const forme = `path d="M100,192 L58,112 A48,48 0 1 1 142,112 Z"`;
+    corps = remplir(c, forme).replaceAll("CLIP", id) + `<path d="M100,192 L58,112 A48,48 0 1 1 142,112 Z" ${trait} stroke-linejoin="round"/>`
+      + `<text x="100" y="${titre.length > 2 ? 99 : 103}" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="${titre.length > 2 ? 30 : 38}" fill="${t}">${titre}</text>`;
+    vb = "40 0 120 200";
+  } else {
+    const forme = `rect x="25" y="50" width="150" height="100"`;
+    corps = remplir(c, forme).replaceAll("CLIP", id);
+    if (sorte === "cie") {
+      corps += `<path d="M25,50 L175,150 M175,50 L25,150" ${trait}/>${remplir(c, `rect x="60" y="80" width="80" height="40" rx="20"`).replaceAll("CLIP", id + "o")}<rect x="60" y="80" width="80" height="40" rx="20" ${trait}/>`
+        + `<path d="M100,10 V44" stroke="currentColor" stroke-width="7"/>`;
+      if (qui === "noir") corps += `<text x="100" y="72" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="22" fill="${t}">APP</text>`;
+    } else { // train de combat : icône ravitaillement + TC1 / TC2
+      corps += `<path d="M25,125 H175" ${trait}/><text x="100" y="110" text-anchor="middle" font-family="Arial Narrow,Arial,sans-serif" font-weight="700" font-size="40" fill="${t}">${titre}</text>`;
+    }
+    corps += `<rect x="25" y="50" width="150" height="100" ${trait}/>`;
+    vb = "15 5 170 150";
+  }
+  return `<svg class="sym" viewBox="${vb}" height="${taille}" role="img" aria-label="${esc(sorte === "point" ? POINTS_NOM[titre] || titre : (NOM[qui] || "") + " " + titre)}">${corps}</svg>`;
+}
+const symCie = (c, taille) => CIES.includes(c) ? symbole("cie", c, taille) : "";
+const symPoste = (p, taille) => p === "tc2" ? symbole("tc", "ami", taille, "TC2") : CIES.includes(p) ? symbole("tc", p, taille, "TC1") : "";
+const symPlot = (d, taille = 34) => symbole("point", d.cie, taille, POINTS[d.plot?.genre] || POINTS[d.type] || "LRP");
 // ÉVASAN : on ne parle pas de plot mais de nid de blessés ou de nid de DCD
 const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
 const lieuNom = d => LIEUX[d.plot?.genre] || "Plot";
+function lignePlot(d) {
+  const m = d.modif;
+  return `<div class="plot">${symPlot(d)}<div>` + (m?.plot ? `<b>${lieuNom(d)} retenu :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}
+      <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
+    : `${d.plot?.genre ? `<b>${lieuNom(d)} :</b> ` : ""}${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}`) + `</div></div>`;
+}
 function carte(d) {
   const m = d.modif;
-  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} retenu :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
-      <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
-    : `<div class="plot">${d.plot?.genre ? `<b>${lieuNom(d)} :</b> ` : ""}${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
+  const plot = lignePlot(d);
   const dernier = (d.historique || []).at(-1);
   return `<article class="demande ${esc(d.statut)}">
     <div class="entete"><span class="type">${esc(d.type)}</span>
-      ${poste === "tc2" ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}
+      ${poste === "tc2" ? `<span class="qui">${symCie(d.cie, 18)}${esc(NOM[d.cie] || d.cie)}</span>` : ""}
       <span class="statut">${STATUTS[d.statut] || ""}</span>
       ${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${esc(d.priorite)}</span>` : ""}
       ${d._attente ? `<span class="attente">Non transmise</span>` : ""}
@@ -441,13 +490,11 @@ const ouverts = new Set();
 function tuile(d, avecUnite) {
   const ouverte = ouverts.has(d.id);
   const m = d.modif;
-  const plot = m?.plot ? `<div class="plot"><b>${lieuNom(d)} retenu :</b> ${esc(m.plot.nom)} <span class="code">${esc(m.plot.coordonnees)}</span> · ${esc(creneauTxt(m.creneau))}</div>
-      <div class="doux">Demandé : ${esc(d.plot?.nom)} ${esc(d.plot?.coordonnees)} · ${esc(creneauTxt(d.creneau))}</div>`
-    : `<div class="plot">${d.plot?.genre ? `<b>${lieuNom(d)} :</b> ` : ""}${esc(d.plot?.nom)} <span class="code">${esc(d.plot?.coordonnees)}</span> · ${esc(creneauTxt(d.creneau))}</div>`;
+  const plot = lignePlot(d);
   const dernier = (d.historique || []).at(-1);
   return `<article class="tuile ${esc(d.statut)} ${ouverte ? "ouverte" : ""}">
     <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
-      <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
+      <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${symCie(d.cie, 18)}${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
       <span class="etat">${d._attente ? "Non transmise" : libelle(d)}</span>
       <span class="resume">${esc(d.statut === "REFUSEE" && dernier?.commentaire ? "Motif : " + dernier.commentaire : resume(d))}</span>
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
@@ -546,19 +593,19 @@ function rafraichir() {
     ? [...CIES, ...new Set(tab.map(d => d.cie).filter(c => !CIES.includes(c)))].map(c => {
         const t = tab.filter(d => d.cie === c); if (!t.length) return "";
         const aTraiter = t.filter(d => cle(d) === (poste === "s4" ? "EMISE" : "ORDRE")).length;
-        return `<div class="unite"><div class="unite-tete"><h3>${esc(NOM[c] || c)}</h3><span>${t.length} demande${t.length > 1 ? "s" : ""}${aTraiter ? ` · ${aTraiter} à traiter` : ""}</span></div>
-          <div class="tuiles">${t.map(tuile).join("")}</div></div>`;
+        return `<div class="unite"><div class="unite-tete"><h3>${symCie(c, 30)}${esc(NOM[c] || c)}</h3><span>${t.length} demande${t.length > 1 ? "s" : ""}${aTraiter ? ` · ${aTraiter} à traiter` : ""}</span></div>
+          <div class="tuiles">${t.map(d => tuile(d, false)).join("")}</div></div>`;
       })
-    : tab.map(tuile)).join("") || vide;
+    : tab.map(d => tuile(d, false))).join("") || vide;
 }
 
 function ecranPostes() {
   $("#poste").textContent = "Choix du poste";
   const dernier = local.lire("poste", "");
   return `<section><h2>Poste</h2><div class="postes">
-      ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${NOM[c]}</button>`).join("")}
+      ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${symCie(c, 44)}${NOM[c]}</button>`).join("")}
       <button type="button" class="tc2 ${dernier === "s4" ? "choisi" : ""}" data-choix="s4">S4</button>
-      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">TC2</button></div>
+      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">${symPoste("tc2", 34)}TC2</button></div>
     <div id="confirme-poste"></div>
     ${estAdmin() ? `<p class="note"><b>Mode administrateur</b> : cet appareil peut changer de poste à tout moment en touchant le nom du poste en haut.</p>` : ""}
     <p class="note">Chaque compagnie (TC1) envoie ses demandes au S4, qui les valide et donne l'ordre au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
@@ -567,7 +614,7 @@ function ecranPostes() {
 }
 
 function ecranTc1() {
-  $("#poste").textContent = "TC1 · " + NOM[poste];
+  $("#poste").innerHTML = symPoste(poste, 24) + esc(NOM[poste]);
   const p = local.lire("plot." + poste, { nom: "", coordonnees: "" });
   const corps = {
     RAV: `<div class="grille">${ARTICLES.map(a => `<div class="article"><span class="classe">${a.classe}</span><span>${a.nom} <span class="unite">${a.unite}</span></span>
@@ -596,7 +643,7 @@ function ecranTc1() {
     <div class="barre-form"><span class="type">${type}</span><small>${TYPES[type]}</small><button type="button" data-vue="accueil">Annuler</button></div>
     <form class="fiche" id="formulaire" novalidate>
       ${corps}
-      <div class="duo"><div class="champ"><label for="f-plot" id="l-plot">${type === "SAN" ? "Nid de blessés" : "Plot"}</label><input id="f-plot" value="${type === "SAN" ? "" : esc(p.nom)}" placeholder="${type === "SAN" ? "NID ALPHA" : "PLOT ALPHA"}"></div>
+      <div class="duo"><div class="champ"><label for="f-plot" style="display:flex;gap:6px;align-items:center"><span id="sym-plot">${symPlot({ cie: poste, type, plot: { genre: type === "SAN" ? "NID_BLESSES" : undefined } }, 30)}</span><span id="l-plot">${type === "SAN" ? "Nid de blessés" : "Plot"}</span></label><input id="f-plot" value="${type === "SAN" ? "" : esc(p.nom)}" placeholder="${type === "SAN" ? "NID ALPHA" : "PLOT ALPHA"}"></div>
         <div class="champ"><label for="f-coord">Coordonnées</label><input id="f-coord" class="code" value="${type === "SAN" ? "" : esc(p.coordonnees)}" placeholder="31U DQ 1234 5678"></div></div>
       <div class="puces" id="creneaux">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}" class="${String(v) === String(creneau) ? "choisi" : ""}">${t}</button>`).join("")}</div>
       <div class="puces" id="prios">${["ROUTINE", "PRIORITAIRE", "URGENTE"].map(x => `<button type="button" data-v="${x}" class="${prio === x ? "choisi" : ""}">${x}</button>`).join("")}</div>
@@ -606,7 +653,7 @@ function ecranTc1() {
 }
 
 function ecranTc2() {
-  $("#poste").textContent = nomPoste(poste);
+  $("#poste").innerHTML = symPoste(poste, 24) + esc(nomPoste(poste));
   return `<section><div class="compteurs" id="compteurs"></div>
     <p class="erreur" id="alerte" role="alert"></p>
     <div class="unites" id="liste"></div></section>`;
@@ -707,7 +754,7 @@ function brancherTc1() {
   }
   if (type === "SAN") {
     const lieu = () => { const evasan = $("#san-evasan").classList.contains("choisi"); $("#san-lieu").hidden = !evasan;
-      const g = $("#san-lieu .choisi")?.dataset.v; $("#l-plot").textContent = evasan ? LIEUX[g] : "Plot"; $("#f-plot").placeholder = evasan ? "NID ALPHA" : "PLOT ALPHA";
+      const g = $("#san-lieu .choisi")?.dataset.v; $("#l-plot").textContent = evasan ? LIEUX[g] : "Plot"; $("#sym-plot").innerHTML = symPlot({ cie: poste, type: "SAN", plot: { genre: evasan ? g : undefined } }, 30); $("#f-plot").placeholder = evasan ? "NID ALPHA" : "PLOT ALPHA";
       $("#f-coord").placeholder = "31U DQ 1234 5678"; };
     $("#san-evasan").onclick = () => { $("#san-evasan").classList.add("choisi"); $("#san-ravito").classList.remove("choisi"); lieu(); };
     $("#san-ravito").onclick = () => { $("#san-ravito").classList.add("choisi"); $("#san-evasan").classList.remove("choisi"); lieu(); };
