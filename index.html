@@ -170,6 +170,26 @@
   .compteurs .c-EN_ROUTE b, .compteurs .c-EN_COURS b { color: var(--orange); } .compteurs .c-FINIES b { color: var(--vert); }
   .compteurs button.choisi { background: var(--kaki-fonce); border-color: var(--kaki); }
   .compteurs button.choisi span { color: var(--texte); }
+  /* Onglets du TC2 : Demandes, Messagerie, Ordres */
+  .onglets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+  .onglets button { padding: 8px 4px; min-height: 42px; font-size: 13px; letter-spacing: .08em; position: relative; }
+  .onglets button.choisi { background: var(--kaki-fonce); color: var(--texte); border-color: var(--kaki); }
+  .onglets .nonlu { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px; border-radius: 9px; background: var(--kaki); color: #11160a; font: 700 11px/16px var(--f-code); }
+  .fil { display: grid; gap: 2px; background: var(--carte); border: 1px solid var(--bord); border-radius: 8px; padding: 6px 10px; max-height: 62vh; overflow-y: auto; }
+  .msg { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--bord); font-size: 15px; }
+  .msg:last-child { border-bottom: 0; }
+  .msg .de { font: 700 12px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); }
+  .msg.moi .de { color: var(--texte); }
+  .msg .h { font: 12px/1 var(--f-code); color: var(--doux); }
+  .msg .t { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .saisie { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 8px; }
+  textarea { font: 500 16px/1.3 var(--f-titre); color: var(--texte); background: var(--champ); border: 1px solid var(--bord); border-radius: 6px; padding: 10px; width: 100%; min-height: 90px; resize: vertical; }
+  .ordre-ecrit { background: var(--carte); border: 1px solid var(--bord); border-left: 3px solid var(--kaki); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; }
+  .ordre-ecrit.pour-moi { border-left-color: var(--orange); }
+  .ordre-ecrit .tete { font: 700 12px/1.2 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); display: flex; gap: 8px; flex-wrap: wrap; }
+  .ordre-ecrit .tete .h { margin-left: auto; font-family: var(--f-code); color: var(--doux); }
+  .ordre-ecrit .t { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ordres-liste { display: grid; gap: 8px; margin-top: 12px; }
 
   /* Partage */
   .qr-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
@@ -333,6 +353,7 @@ function majAdresse() {
   const s = q.toString(); history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + location.hash);
 }
 let code = local.lire("code", "");
+let messagesRef = null, desabonnerMessages = null, messages = [], messagesConnus = null;
 let collection = null, unitesRef = null, desabonnerUnites = null, demandes = {}, attente = new Set(), liaison = "connexion", desabonner = null;
 const configOk = FIREBASE.apiKey && FIREBASE.apiKey !== "A_REMPLACER" && FIREBASE.projectId;
 let fs = null;
@@ -350,11 +371,19 @@ function majEtat() {
 function brancherBase() {
   if (desabonner) { desabonner(); desabonner = null; }
   if (desabonnerUnites) { desabonnerUnites(); desabonnerUnites = null; }
+  if (desabonnerMessages) { desabonnerMessages(); desabonnerMessages = null; }
+  messages = []; messagesRef = null; messagesConnus = null;
   demandes = {}; attente = new Set(); collection = null; unitesRef = null; statutsConnus = null; majUnites([]);
   if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
   collection = fs.collection("postes").doc(code).collection("demandes");
   liaison = "connexion"; majEtat();
   unitesRef = fs.collection("postes").doc(code).collection("unites");
+  // Messagerie et ordres écrits du TC2 et de ses sections (les 300 derniers)
+  messagesRef = fs.collection("postes").doc(code).collection("messages");
+  desabonnerMessages = messagesRef.orderBy("le", "desc").limit(300).onSnapshot(snap => {
+    messages = snap.docs.map(d => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.le).localeCompare(String(b.le)));
+    alertesMessages(); rafraichirMessages();
+  }, () => {});
   desabonnerUnites = unitesRef.onSnapshot(snap => {
     majUnites(snap.docs.map(d => ({ ...d.data(), id: d.id })));
     if ($("#principal .qr-grille")) { if (!$("#form-cie")) ecranPartage(); } // page QR : nouvelle compagnie = nouveau QR code
@@ -637,6 +666,77 @@ function panneauModif(d) {
 }
 const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000).toISOString();
 
+// ---------- Messagerie et ordres écrits (TC2 et ses sections) ----------
+let ongletTc2 = "DEMANDES", destOrdre = "";
+const familleTc2 = p => p === "tc2" || estSection(p);
+// Un ordre écrit est visible de son auteur, de son destinataire (et de la section mère d'un groupe), du TC2, ou de tous s'il est pour tous
+const ordreVisible = (m, p = poste) => !m.pour || m.pour === p || m.de === p || p === "tc2" || SECTIONS[m.pour]?.parent === p;
+const visibles = canal => messages.filter(m => m.canal === canal && (canal === "chat" || ordreVisible(m)));
+const nonLus = canal => { const vu = local.lire(`lu.${canal}.${poste}`, ""); return visibles(canal).filter(m => m.de !== poste && String(m.le) > vu).length; };
+function marquerLu(canal) { const v = visibles(canal), dernier = v.at(-1)?.le; if (dernier) local.ecrire(`lu.${canal}.${poste}`, dernier); }
+function alertesMessages() {
+  if (!familleTc2(poste)) return;
+  const premier = messagesConnus === null; if (premier) messagesConnus = new Set();
+  for (const m of messages) {
+    if (messagesConnus.has(m.id)) continue; messagesConnus.add(m.id);
+    if (premier || m.de === poste || (m.canal === "ordre" && !ordreVisible(m))) continue;
+    if (m.canal === "chat" && ongletTc2 === "CHAT" && document.visibilityState === "visible") continue;
+    signaler({ titre: m.canal === "ordre" ? `Ordre de ${m.nom}${m.pour ? " pour " + nomPoste(m.pour) : ""}` : `Message de ${m.nom}`, texte: m.texte.slice(0, 120), couleur: m.canal === "ordre" && m.pour === poste ? "orange" : "", tag: m.id });
+  }
+}
+function onglets() {
+  const n = c => { const x = nonLus(c); return x ? `<span class="nonlu">${x}</span>` : ""; };
+  return `<div class="onglets">${[["DEMANDES", "Demandes", ""], ["CHAT", "Messagerie", n("chat")], ["ORDRES", "Ordres", n("ordre")]]
+    .map(([k, t, b]) => `<button type="button" data-onglet="${k}" class="${ongletTc2 === k ? "choisi" : ""}">${t}${b}</button>`).join("")}</div>`;
+}
+function ecranChat() {
+  return `<div class="fil" id="fil"></div>
+    <form class="saisie" id="form-msg" novalidate><input id="msg-texte" maxlength="500" autocomplete="off" placeholder="Message"><button type="submit" class="plein">Envoyer</button></form>
+    <p class="erreur" id="alerte" role="alert"></p>`;
+}
+function ecranOrdres() {
+  const dests = ["", "tc2", ...Object.keys(SECTIONS)].filter(k => k !== poste);
+  return `<form class="fiche" id="form-ordre" novalidate>
+      <textarea id="ordre-texte" maxlength="2000" placeholder="Texte de l'ordre"></textarea>
+      <div class="champ"><label>Destinataire</label><div class="puces" id="ordre-dest">${dests.map(k => `<button type="button" data-v="${k}" class="${destOrdre === k ? "choisi" : ""}">${k ? esc(nomPoste(k)) : "Tous"}</button>`).join("")}</div></div>
+      <p class="erreur" id="alerte" role="alert"></p>
+      <button type="submit" class="plein">Émettre l'ordre</button></form>
+    <div class="ordres-liste" id="fil-ordres"></div>`;
+}
+function rafraichirMessages() {
+  if (!familleTc2(poste)) return;
+  const o = $(".onglets"); if (o) o.outerHTML = onglets();
+  const fil = $("#fil");
+  if (fil) {
+    const bas = fil.scrollHeight - fil.scrollTop - fil.clientHeight < 40;
+    fil.innerHTML = visibles("chat").map(m => `<div class="msg ${m.de === poste ? "moi" : ""}"><span class="de">${esc(m.nom)}</span><span class="h">${jhm(m.le)}</span><span class="t">${esc(m.texte)}</span></div>`).join("")
+      || `<p class="vide">Aucun message.</p>`;
+    if (bas || !fil.dataset.vu) { fil.scrollTop = fil.scrollHeight; fil.dataset.vu = "1"; }
+    marquerLu("chat"); const o2 = $(".onglets"); if (o2) o2.outerHTML = onglets();
+  }
+  const fo = $("#fil-ordres");
+  if (fo) {
+    fo.innerHTML = visibles("ordre").slice().reverse().map(m => `<article class="ordre-ecrit ${m.pour === poste ? "pour-moi" : ""}"><div class="tete"><span>${esc(m.nom)}</span><span>→ ${m.pour ? esc(nomPoste(m.pour)) : "Tous"}</span><span class="h">${jhm(m.le)}</span></div><div class="t">${esc(m.texte)}</div></article>`).join("")
+      || `<p class="vide">Aucun ordre écrit.</p>`;
+    marquerLu("ordre"); const o2 = $(".onglets"); if (o2) o2.outerHTML = onglets();
+  }
+}
+function envoyerMessage(canal, texte, pour) {
+  if (!messagesRef) return alerte("Base non configurée.");
+  const m = { canal, de: poste, nom: nomPoste(poste), le: new Date().toISOString(), texte, ...(canal === "ordre" ? { pour: pour || "" } : {}) };
+  messagesRef.doc(nouvelId()).set(m).catch(e => alerte(e?.code === "permission-denied" ? "Envoi refusé par la base : publier les nouvelles règles Firebase." : "Envoi impossible : " + (e?.message || e)));
+}
+function brancherMessages() {
+  const fm = $("#form-msg");
+  if (fm) fm.onsubmit = e => { e.preventDefault(); const t = $("#msg-texte").value.trim(); if (!t) return; $("#msg-texte").value = ""; envoyerMessage("chat", t); $("#msg-texte").focus(); };
+  const fo = $("#form-ordre");
+  if (fo) {
+    $("#ordre-dest").onclick = e => { const b = e.target.closest("button"); if (!b) return; destOrdre = b.dataset.v; $("#ordre-dest").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); };
+    fo.onsubmit = e => { e.preventDefault(); const t = $("#ordre-texte").value.trim(); if (!t) return $("#alerte").textContent = "Écrire le texte de l'ordre.";
+      $("#ordre-texte").value = ""; $("#alerte").textContent = ""; envoyerMessage("ordre", t, destOrdre); };
+  }
+}
+
 // ---------- Écrans ----------
 let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "", vueTc1 = "accueil", dernierPoste = null;
 function rafraichir() {
@@ -745,7 +845,11 @@ function ecranTc1() {
 
 function ecranTc2() {
   $("#poste").innerHTML = symPoste(poste, 24) + esc(nomPoste(poste));
-  return `<section><div class="compteurs" id="compteurs"></div>
+  if (!familleTc2(poste)) ongletTc2 = "DEMANDES";
+  const haut = familleTc2(poste) ? onglets() : "";
+  if (ongletTc2 === "CHAT") return `<section>${haut}${ecranChat()}</section>`;
+  if (ongletTc2 === "ORDRES") return `<section>${haut}${ecranOrdres()}</section>`;
+  return `<section>${haut}<div class="compteurs" id="compteurs"></div>
     <p class="erreur" id="alerte" role="alert"></p>
     <div class="unites" id="liste"></div></section>`;
 }
@@ -824,13 +928,14 @@ function ouvrir() {
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   const perso = poste && !(poste in DE_BASE) && UNITES[poste]?.couleur; // fond des compagnies créées : leur couleur assombrie
   ["--fond-profil", "--sur", "--sur-fort"].forEach((v, i) => perso ? document.body.style.setProperty(v, [sombre(perso), "#e3e6dc", "#fff"][i]) : document.body.style.removeProperty(v));
-  if (poste !== dernierPoste) { vueTc1 = "accueil"; ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
+  if (poste !== dernierPoste) { vueTc1 = "accueil"; ongletTc2 = "DEMANDES"; destOrdre = ""; messagesConnus = null; alertesMessages(); ouverts.clear(); dernierPoste = poste; statutsConnus = null; detecterAlertes(); }
   majBoutonAlertes();
   panneau = null;
   const main = $("#principal");
   main.className = estCentre(poste) ? "tc2" : poste ? "tc1" : "";
   main.innerHTML = !poste ? ecranPostes() : estCentre(poste) ? ecranTc2() : ecranTc1();
   if (poste && !estCentre(poste) && vueTc1 === "form") brancherTc1();
+  if (familleTc2(poste)) { brancherMessages(); rafraichirMessages(); }
   rafraichir();
 }
 
@@ -999,6 +1104,7 @@ document.addEventListener("click", async e => {
     const ouvert = joursOuverts.has(j) || (j === auj && !joursFermes.has(j));
     if (ouvert) { joursOuverts.delete(j); joursFermes.add(j); } else { joursFermes.delete(j); joursOuverts.add(j); }
     b.blur(); return rafraichir(); }
+  if (b.dataset.onglet) { ongletTc2 = b.dataset.onglet; b.blur(); ouvrir(); if (ongletTc2 === "CHAT") $("#fil") && ($("#fil").scrollTop = 1e9); return; }
   if (b.dataset.filtre) { filtreTc2 = filtreTc2 === b.dataset.filtre ? "ACTIFS" : b.dataset.filtre; rafraichir(); return; }
   if (b.closest("#m-creneau")) { $("#m-creneau").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); return; }
   const act = b.dataset.act; if (!act) return;
@@ -1032,7 +1138,7 @@ if (!location.hash) { const p = local.lire("poste", ""); if (p) history.replaceS
 brancherBase(); ouvrir(); majEtat();
 if ("serviceWorker" in navigator && window.isSecureContext) {
   let rechargee = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !window.Carto?.ouverte && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !window.Carto?.ouverte && !document.querySelector("form input:focus, form textarea:focus")) { rechargee = true; location.reload(); } });
   navigator.serviceWorker.register("sw.js").then(r => { setInterval(() => r.update().catch(() => {}), 30 * 60000); }).catch(() => {});
 }
 setInterval(() => { if (!panneau) rafraichir(); }, 30000);
