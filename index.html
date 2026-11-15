@@ -214,6 +214,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="carte.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
@@ -492,7 +493,7 @@ function panneauModif(d) {
       <input type="number" inputmode="decimal" min="0" id="m-q${i}" value="${l.quantite}" aria-label="Quantité ${esc(l.nom)}"></div>`).join("") : "";
   return `<div class="panneau">${lignes ? `<div class="grille">${lignes}</div>` : ""}
     <div class="duo"><div class="champ"><label for="m-plot">${lieuNom(d)}</label><input id="m-plot" value="${esc(d.plot?.nom)}"></div>
-      <div class="champ"><label for="m-coord">Coordonnées</label><input id="m-coord" class="code" value="${esc(d.plot?.coordonnees)}"></div></div>
+      <div class="champ"><label for="m-coord">Coordonnées</label><input id="m-coord" class="code" data-coord value="${esc(d.plot?.coordonnees)}"></div></div>
     <div class="champ"><label>Créneau</label><div class="puces" id="m-creneau">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join("")}</div></div>
     <div class="champ"><label for="m-itin">Itinéraire</label><input id="m-itin" placeholder="Ex. RN4 puis piste P2" value="${esc(d.ordre?.itineraire)}"></div>
     <div class="champ"><label for="m-moyens">Moyens</label><input id="m-moyens" placeholder="Ex. 2 PPLOG, 1 citerne" value="${esc(d.ordre?.moyens)}"></div>
@@ -505,7 +506,7 @@ const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000
 let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "", vueTc1 = "accueil", dernierPoste = null;
 function rafraichir() {
   const liste = $("#liste"); if (!liste) return;
-  if (panneau && liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  if (panneau && (window.Carto?.ouverte || liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT")) return;
   let tab = Object.values(tout());
   if (estCentre(poste)) {
     // le TC2 est en copie de toutes les demandes, mais n'agit qu'après l'ordre du S4
@@ -597,7 +598,7 @@ function ecranTc1() {
     <form class="fiche" id="formulaire" novalidate>
       ${corps}
       <div class="duo"><div class="champ"><label for="f-plot" id="l-plot">${type === "SAN" ? "Nid de blessés" : "Plot"}</label><input id="f-plot" value="${type === "SAN" ? "" : esc(p.nom)}" placeholder="${type === "SAN" ? "NID ALPHA" : "PLOT ALPHA"}"></div>
-        <div class="champ"><label for="f-coord">Coordonnées</label><input id="f-coord" class="code" value="${type === "SAN" ? "" : esc(p.coordonnees)}" placeholder="31U DQ 1234 5678"></div></div>
+        <div class="champ"><label for="f-coord">Coordonnées</label><input id="f-coord" class="code" data-coord value="${type === "SAN" ? "" : esc(p.coordonnees)}" placeholder="31U DQ 1234 5678"></div></div>
       <div class="puces" id="creneaux">${CRENEAUX.map(([v, t]) => `<button type="button" data-v="${v}" class="${String(v) === String(creneau) ? "choisi" : ""}">${t}</button>`).join("")}</div>
       <div class="puces" id="prios">${["ROUTINE", "PRIORITAIRE", "URGENTE"].map(x => `<button type="button" data-v="${x}" class="${prio === x ? "choisi" : ""}">${x}</button>`).join("")}</div>
       <p class="erreur" id="erreur" role="alert"></p>
@@ -840,7 +841,7 @@ if (!location.hash) { const p = local.lire("poste", ""); if (p) history.replaceS
 brancherBase(); ouvrir(); majEtat();
 if ("serviceWorker" in navigator && window.isSecureContext) {
   let rechargee = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !window.Carto?.ouverte && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
   navigator.serviceWorker.register("sw.js").then(r => { setInterval(() => r.update().catch(() => {}), 30 * 60000); }).catch(() => {});
 }
 setInterval(() => { if (!panneau) rafraichir(); }, 30000);
