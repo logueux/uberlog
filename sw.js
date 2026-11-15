@@ -2,17 +2,29 @@
 const VERSION = "uberlog-v16";
 const COQUILLE = ["./", "./index.html", "./manifest.webmanifest", "./icones/icone-192.png", "./icones/icone-512.png", "./icones/apple-touch-icon.png"];
 
+COQUILLE.push("./carte.js");
+// Fonds de carte : cache à part, gardé d'une version à l'autre (zones déjà vues consultables hors réseau)
+const TUILES = "uberlog-tuiles", TUILES_MAX = 4000;
+const estTuile = u => u.hostname === "data.geopf.fr" || u.hostname.endsWith("tile.opentopomap.org");
+
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(COQUILLE)).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== TUILES).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener("fetch", e => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== "GET") return;
   // Firestore gère lui-même son hors-ligne : ne pas s'en mêler
   if (url.hostname.endsWith("googleapis.com") && !url.hostname.startsWith("fonts.")) return;
+  if (estTuile(url)) {
+    e.respondWith(caches.open(TUILES).then(c => c.match(req).then(hit => hit || fetch(req).then(r => {
+      if (r.ok || r.type === "opaque") { c.put(req, r.clone()).then(() => c.keys()).then(ks => { if (ks.length > TUILES_MAX) return Promise.all(ks.slice(0, ks.length - TUILES_MAX).map(k => c.delete(k))); }).catch(() => {}); }
+      return r;
+    }))));
+    return;
+  }
   if (req.mode === "navigate") {
     // Page : réseau d'abord (mises à jour immédiates), cache si hors réseau
     e.respondWith(fetch(req).then(r => { const copie = r.clone(); caches.open(VERSION).then(c => c.put("./index.html", copie)); return r; })

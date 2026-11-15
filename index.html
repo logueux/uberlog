@@ -218,6 +218,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="carte.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
@@ -552,7 +553,7 @@ const plusMinutes = v => v === "" ? "" : new Date(Date.now() + Number(v) * 60000
 let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "", vueTc1 = "accueil", dernierPoste = null;
 function rafraichir() {
   const liste = $("#liste"); if (!liste) return;
-  if (panneau && liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  if (panneau && (window.Carto?.ouverte || liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT")) return;
   let tab = Object.values(tout());
   if (estCentre(poste)) {
     // le TC2 est en copie de toutes les demandes, mais n'agit qu'après l'ordre du S4
@@ -887,7 +888,7 @@ if (!location.hash) { const p = local.lire("poste", ""); if (p) history.replaceS
 brancherBase(); ouvrir(); majEtat();
 if ("serviceWorker" in navigator && window.isSecureContext) {
   let rechargee = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !window.Carto?.ouverte && !document.querySelector("form input:focus")) { rechargee = true; location.reload(); } });
   navigator.serviceWorker.register("sw.js").then(r => { setInterval(() => r.update().catch(() => {}), 30 * 60000); }).catch(() => {});
 }
 setInterval(() => { if (!panneau) rafraichir(); }, 30000);
