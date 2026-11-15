@@ -199,7 +199,14 @@
   .ordre.retour { border-left-color: var(--orange); }
   .ordre b { font: 700 12px/1.2 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); }
   .ordre.retour b { color: var(--orange); }
-  body[data-profil="tc2"] { --fond-profil: #393d41; --sur: #d4d7da; --sur-fort: #fff; }
+  body[data-profil="tc2"], body[data-profil^="tc2-"] { --fond-profil: #393d41; --sur: #d4d7da; --sur-fort: #fff; }
+  /* Sections et groupes du TC2 */
+  .postes .section { grid-column: span 1; font-size: 17px; min-height: 60px; background: var(--kaki-fonce); border-color: var(--kaki); color: var(--kaki); }
+  .postes .section.choisi { background: var(--kaki); color: #11160a; }
+  .affectation { display: grid; gap: 6px; }
+  .affectation label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .affectation .puces button { padding: 6px 10px; min-height: 36px; font-size: 13px; }
+  .pour { font: 700 12px/1 var(--f-titre); letter-spacing: .06em; border: 1px solid var(--kaki); color: var(--kaki); border-radius: 4px; padding: 3px 6px; }
   h2, .note, .legende, .vide, .unite-tete span { color: var(--sur); }
   .unite-tete h3, .barre-form .type { color: var(--sur-fort); }
   .barre-form small { color: var(--sur); }
@@ -255,12 +262,13 @@ const DE_BASE = { bleu: { nom: "Bleu", type: "inf_meca" }, furieux: { nom: "Furi
 let UNITES = { ...DE_BASE }, CIES = Object.keys(DE_BASE);
 const NOM = Object.fromEntries(Object.entries(DE_BASE).map(([k, u]) => [k, u.nom]));
 const RESERVES = ["s4", "tc2", "postes", "ami"];
+const reserve = id => RESERVES.includes(id) || id.startsWith("tc2-");
 const identifiant = nom => nom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
 const texteSur = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); return 0.299 * r + 0.587 * g + 0.114 * b > 140 ? "#000" : "#fff"; };
 const sombre = hex => "#" + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.4).toString(16).padStart(2, "0")).join("");
 function majUnites(docs) {
   UNITES = { ...DE_BASE };
-  docs.sort((a, b) => String(a.cree_le).localeCompare(String(b.cree_le))).forEach(u => { if (u.id in DE_BASE || RESERVES.includes(u.id)) return; UNITES[u.id] = u; });
+  docs.sort((a, b) => String(a.cree_le).localeCompare(String(b.cree_le))).forEach(u => { if (u.id in DE_BASE || reserve(u.id)) return; UNITES[u.id] = u; });
   CIES = Object.keys(UNITES).filter(k => !UNITES[k].retiree);
   for (const [k, u] of Object.entries(UNITES)) { NOM[k] = u.nom; if (!(k in DE_BASE)) COULEURS[k] = { f: u.couleur, t: texteSur(u.couleur) }; }
 }
@@ -270,13 +278,23 @@ const FINIS = ["LIVREE", "REFUSEE", "ANNULEE"];
 // Circuit : TC1 émet → S4 valide / amende et donne l'ordre → TC2 exécute.
 // Une demande « Émise » sans ordre est chez le S4 ; avec ordre (d.ordre) elle est chez le TC2.
 const CENTRES = { s4: "S4", tc2: "TC2" };
+// Sections et groupes du TC2 : chacun a son QR code. Le TC2 leur affecte les ordres du S4 (d.affecte) ;
+// la section ne voit que ce qui lui est affecté et l'exécute (prise en compte, départ, livrée, impossible).
+// KILO voit aussi les ordres de ses groupes KILO 1 à 5 et peut les répartir entre eux.
+const SECTIONS = { "tc2-pelican": { nom: "PELICAN" }, "tc2-alpha": { nom: "ALPHA" }, "tc2-lima": { nom: "LIMA" }, "tc2-kilo": { nom: "KILO" },
+  ...Object.fromEntries([1, 2, 3, 4, 5].map(n => [`tc2-kilo-${n}`, { nom: `KILO ${n}`, parent: "tc2-kilo" }])) };
+const estSection = p => p in SECTIONS;
+const NOMS_CENTRES = new Set([...Object.values(CENTRES), ...Object.values(SECTIONS).map(s => s.nom)]);
+// La demande concerne-t-elle ce poste ? (section : affectée à elle, ou à un de ses groupes)
+const concerne = (d, p = poste) => !estSection(p) || d.affecte === p || SECTIONS[d.affecte]?.parent === p;
+const nomAffecte = d => SECTIONS[d.affecte]?.nom || "";
 // Mode administrateur : seul l'appareil où le code administrateur a été saisi peut changer de poste.
 // Seule l'empreinte SHA-256 du code figure ici, jamais le code lui-même.
 const ADMIN_EMPREINTE = "a3a63d1995c31e2f83b139eb3ffdb20a34f232990df7a7f05d0930e16aeda040";
 const estAdmin = () => local.lire("admin", "") === ADMIN_EMPREINTE;
 async function empreinte(t) { const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, "0")).join(""); }
-const estCentre = p => p in CENTRES;
-const nomPoste = p => CENTRES[p] || NOM[p] || p;
+const estCentre = p => p in CENTRES || estSection(p);
+const nomPoste = p => CENTRES[p] || SECTIONS[p]?.nom || NOM[p] || p;
 const cle = d => d.statut === "EMISE" ? (d.ordre ? "ORDRE" : "EMISE") : d.statut;
 const libelle = d => d.statut === "EMISE" ? (d.ordre ? "Validée S4" : d.retour ? "Retour TC2" : poste === "tc2" ? "Attente S4" : "Émise") : STATUTS[d.statut] || "";
 const MOTIFS_TC2 = ["Moyens indisponibles", "Stock épuisé", "Itinéraire impraticable", "Hors délai"];
@@ -365,7 +383,7 @@ function detecterAlertes() {
   const premier = statutsConnus === null; if (premier) statutsConnus = {};
   const nouvelles = [];
   for (const [id, d] of Object.entries(demandes)) {
-    const k = cle(d), avant = statutsConnus[id]; statutsConnus[id] = k;
+    const k = concerne(d) ? cle(d) : "HORS", avant = statutsConnus[id]; statutsConnus[id] = k; // section : ce qui ne lui est pas affecté ne compte pas
     if (premier || attente.has(id) || avant === k) continue;
     const auteur = (d.historique || []).at(-1)?.par, motif = (d.historique || []).at(-1)?.commentaire;
     const urg = d.priorite === "URGENTE", unite = NOM[d.cie] || d.cie;
@@ -377,9 +395,11 @@ function detecterAlertes() {
       nouvelles.push({ titre: `Copie : demande ${d.type}${urg ? " URGENTE" : ""}`, texte: `${unite} · en attente de l'ordre du S4`, couleur: "", tag: id });
     if (poste === "tc2" && k === "ORDRE")
       nouvelles.push({ titre: `Ordre S4 : ${d.type}${urg ? " URGENT" : ""}`, texte: `${unite} · ${resume(d)}`, couleur: urg ? "rouge" : "", tag: id });
-    if (estCentre(poste) && k === "ANNULEE" && avant !== undefined && true)
+    if (estSection(poste) && k === "ORDRE" && avant !== "ORDRE")
+      nouvelles.push({ titre: `Ordre ${d.type}${urg ? " URGENT" : ""} pour ${nomAffecte(d)}`, texte: `${unite} · ${resume(d)}`, couleur: urg ? "rouge" : "", tag: id });
+    if (estCentre(poste) && k === "ANNULEE" && avant !== undefined && avant !== "HORS")
       nouvelles.push({ titre: `${d.type} annulée`, texte: `${unite} a annulé sa demande`, couleur: "", tag: id });
-    if (!estCentre(poste) && d.cie === poste && avant !== undefined && estCentre(Object.keys(CENTRES).find(c => CENTRES[c] === auteur) || "") && !(k === "EMISE" && avant === "ORDRE"))
+    if (!estCentre(poste) && d.cie === poste && avant !== undefined && NOMS_CENTRES.has(auteur) && !(k === "EMISE" && avant === "ORDRE"))
       nouvelles.push({ titre: `${d.type} : ${libelle(d)}`, texte: d.statut === "REFUSEE" ? `Motif : ${motif || "non précisé"}` : resume(d), couleur: COULEUR[d.statut] || "", tag: id });
   }
   nouvelles.forEach(signaler);
@@ -387,7 +407,7 @@ function detecterAlertes() {
 }
 function majPastille() {
   try {
-    const n = Object.values(demandes).filter(d => poste === "s4" ? cle(d) === "EMISE" : poste === "tc2" ? cle(d) === "ORDRE" : d.cie === poste && ["PREPARATION", "EN_ROUTE"].includes(d.statut)).length;
+    const n = Object.values(demandes).filter(d => poste === "s4" ? cle(d) === "EMISE" : estCentre(poste) ? cle(d) === "ORDRE" && concerne(d) : d.cie === poste && ["PREPARATION", "EN_ROUTE"].includes(d.statut)).length;
     if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge();
   } catch {}
 }
@@ -512,7 +532,7 @@ function symbole(sorte, qui, taille = 40, titre = "") {
   return `<svg class="sym" viewBox="${vb}" height="${taille}" role="img" aria-label="${esc(sorte === "point" ? POINTS_NOM[titre] || titre : (u?.nom || "") + " " + (titre || NOM_TYPE[u?.type] || ""))}">${corps}</svg>`;
 }
 const symCie = (c, taille) => c in UNITES ? symbole("cie", c, taille) : "";
-const symPoste = (p, taille) => p === "tc2" ? symbole("tc", "ami", taille, "TC2") : p in UNITES ? symbole("tc", p, taille, "TC1") : "";
+const symPoste = (p, taille) => p === "tc2" || estSection(p) ? symbole("tc", "ami", taille, "TC2") : p in UNITES ? symbole("tc", p, taille, "TC1") : "";
 const symPlot = (d, taille = 34) => symbole("point", d.cie, taille, POINTS[d.plot?.genre] || POINTS[d.type] || "LRP");
 // ÉVASAN : on ne parle pas de plot mais de nid de blessés ou de nid de DCD
 const LIEUX = { NID_BLESSES: "Nid de blessés", NID_DCD: "Nid de DCD" };
@@ -553,7 +573,7 @@ function tuile(d, avecUnite) {
   const dernier = (d.historique || []).at(-1);
   return `<article class="tuile ${esc(d.statut)} ${ouverte ? "ouverte" : ""}">
     <button type="button" class="tuile-tete" data-ouvre="${esc(d.id)}" aria-expanded="${ouverte}">
-      <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${symCie(d.cie, 18)}${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}</span>
+      <span class="ligne1"><span class="type">${esc(d.type)}</span>${avecUnite ? `<span class="qui">${symCie(d.cie, 18)}${esc(NOM[d.cie] || d.cie)}</span>` : ""}${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${d.priorite === "URGENTE" ? "URG" : "PRIO"}</span>` : ""}${nomAffecte(d) && estCentre(poste) && d.affecte !== poste ? `<span class="pour">${esc(nomAffecte(d))}</span>` : ""}</span>
       <span class="etat">${d._attente ? "Non transmise" : libelle(d)}</span>
       <span class="resume">${esc(d.statut === "REFUSEE" && dernier?.commentaire ? "Motif : " + dernier.commentaire : resume(d))}</span>
       <span class="pied"><span>${jhm(d.cree_le)}</span></span>
@@ -561,7 +581,7 @@ function tuile(d, avecUnite) {
     ${ouverte ? `<div class="tuile-corps"><div class="contenu">${contenu(d, m)}</div>${plot}${blocOrdre(d)}
       ${d.remarques ? `<div class="doux">${esc(d.remarques)}</div>` : ""}
       ${dernier?.commentaire ? `<div class="doux">« ${esc(dernier.commentaire)} » · ${esc(dernier.par)} ${hm(dernier.le)}</div>` : ""}
-      ${actions(d)}</div>` : ""}
+      ${affectation(d)}${actions(d)}</div>` : ""}
   </article>`;
 }
 
@@ -569,6 +589,16 @@ function blocOrdre(d) {
   const o = d.ordre, r = d.retour;
   return (o ? `<div class="ordre"><b>Ordre S4</b>${o.itineraire ? `<div>Itinéraire : ${esc(o.itineraire)}</div>` : ""}${o.moyens ? `<div>Moyens : ${esc(o.moyens)}</div>` : ""}${o.consigne ? `<div>Consigne : ${esc(o.consigne)}</div>` : ""}</div>` : "")
     + (r && d.statut === "EMISE" && !o ? `<div class="ordre retour"><b>Retour TC2</b><div>${esc(r.motif)} · ${hm(r.le)}</div></div>` : "");
+}
+// Affectation d'un ordre du S4 à une section (par le TC2) ou à un groupe KILO (par le TC2 ou KILO)
+function affectation(d) {
+  if (d._attente || panneau?.id === d.id || !d.ordre || !["EMISE", "PREPARATION", "EN_ROUTE"].includes(d.statut)) return "";
+  const choix = poste === "tc2" ? Object.keys(SECTIONS) : poste === "tc2-kilo" ? Object.keys(SECTIONS).filter(k => k === "tc2-kilo" || SECTIONS[k].parent === "tc2-kilo") : [];
+  if (!choix.length) return "";
+  const btn = k => `<button type="button" class="${d.affecte === k ? "choisi" : ""}" data-act="AFFECTER" data-id="${esc(d.id)}" data-v="${k}">${esc(SECTIONS[k].nom)}</button>`;
+  return `<div class="affectation"><label>${poste === "tc2" ? "Affecter à" : "Affecter au groupe"}</label>
+    <div class="puces">${choix.filter(k => !SECTIONS[k].parent).map(btn).join("")}</div>
+    <div class="puces">${choix.filter(k => SECTIONS[k].parent).map(btn).join("")}</div></div>`;
 }
 let panneau = null; // { id, mode: "MOD" | "REF" | "IMP" }
 function actions(d) {
@@ -613,13 +643,14 @@ function rafraichir() {
   const liste = $("#liste"); if (!liste) return;
   if (panneau && (window.Carto?.ouverte || liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT")) return;
   let tab = Object.values(tout());
+  if (estSection(poste)) tab = tab.filter(d => concerne(d)); // une section ne voit que ce qui lui est affecté
   if (estCentre(poste)) {
     // le TC2 est en copie de toutes les demandes, mais n'agit qu'après l'ordre du S4
     const actives = tab.filter(d => !FINIS.includes(d.statut));
     const groupe = k => k === "EN_COURS" ? ["PREPARATION", "EN_ROUTE"] : [k];
     const n = k => actives.filter(d => groupe(k).includes(cle(d))).length;
     const finiesJour = tab.filter(d => FINIS.includes(d.statut) && jour(d) === new Date().toDateString()).length;
-    const compteurs = poste === "s4" ? [["EMISE", "À valider"], ["ORDRE", "Chez TC2"], ["EN_COURS", "En cours"]] : [["EMISE", "Chez S4"], ["ORDRE", "Ordres S4"], ["EN_COURS", "En cours"]];
+    const compteurs = poste === "s4" ? [["EMISE", "À valider"], ["ORDRE", "Chez TC2"], ["EN_COURS", "En cours"]] : estSection(poste) ? [["ORDRE", "À prendre"], ["EN_COURS", "En cours"]] : [["EMISE", "Chez S4"], ["ORDRE", "Ordres S4"], ["EN_COURS", "En cours"]];
     $("#compteurs").innerHTML = [...compteurs.map(([k, t]) => [k, t, n(k)]), ["FINIES", "Archives", finiesJour]]
       .map(([k, t, v]) => `<button type="button" class="c-${k} ${filtreTc2 === k ? "choisi" : ""}" data-filtre="${k}"><b>${v}</b><span>${t}</span></button>`).join("");
     tab = filtreTc2 === "ACTIFS" ? actives : filtreTc2 === "FINIES" ? tab.filter(d => FINIS.includes(d.statut)) : actives.filter(d => groupe(filtreTc2).includes(cle(d)));
@@ -630,7 +661,7 @@ function rafraichir() {
     // une demande refusée reste affichée jusqu'à ce que le TC1 touche « Lu »
     tab = tab.filter(d => d.cie === poste && (!FINIS.includes(d.statut) || (d.statut === "REFUSEE" && !d.lu_tc1))).sort((a, b) => String(b.cree_le).localeCompare(String(a.cree_le))).slice(0, 30);
   }
-  const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "s4" ? "Rien à valider. Les demandes des compagnies arrivent ici." : poste === "tc2" ? "Aucune demande. Les demandes des compagnies arrivent ici en copie ; tu agis après l'ordre du S4." : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
+  const vide = `<p class="vide">${liaison === "connexion" ? "Chargement…" : poste === "s4" ? "Rien à valider. Les demandes des compagnies arrivent ici." : poste === "tc2" ? "Aucune demande. Les demandes des compagnies arrivent ici en copie ; tu agis après l'ordre du S4." : estSection(poste) ? `Aucun ordre pour ${esc(nomPoste(poste))}. Le TC2 t'affecte ici les ordres du S4.` : "Aucune demande. Touche « Nouvelle demande » pour commencer."}</p>`;
   // TC2 : demandes regroupées par unité, en carrés colorés comme côté TC1
   // TC2 : archives des demandes terminées, une rubrique par jour (la plus récente en haut)
   if (estCentre(poste) && filtreTc2 === "FINIES") {
@@ -664,7 +695,8 @@ function ecranPostes() {
   return `<section><h2>Poste</h2><div class="postes">
       ${CIES.map(c => `<button type="button" data-choix="${c}" class="${dernier === c ? "choisi" : ""}">${symCie(c, 44)}${esc(NOM[c])}</button>`).join("")}
       <button type="button" class="tc2 ${dernier === "s4" ? "choisi" : ""}" data-choix="s4">S4</button>
-      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">${symPoste("tc2", 34)}TC2</button></div>
+      <button type="button" class="tc2 ${dernier === "tc2" ? "choisi" : ""}" data-choix="tc2">${symPoste("tc2", 34)}TC2</button>
+      ${Object.entries(SECTIONS).map(([k, s]) => `<button type="button" class="section ${dernier === k ? "choisi" : ""}" data-choix="${k}">${esc(s.nom)}</button>`).join("")}</div>
     <div id="confirme-poste"></div>
     ${estAdmin() ? `<p class="note"><b>Mode administrateur</b> : cet appareil peut changer de poste à tout moment en touchant le nom du poste en haut.</p>` : ""}
     <p class="note">Chaque compagnie (TC1) envoie ses demandes au S4, qui les valide et donne l'ordre au TC2. Attention : une fois choisie, l'unité ne peut plus être changée sur cet appareil.</p>
@@ -890,7 +922,7 @@ function brancherCie() {
   f.onsubmit = async e => { e.preventDefault(); maj();
     const err = $("#cie-erreur"), nom = brouillonCie.nom.trim().replace(/\s+/g, " "), id = identifiant(nom);
     if (!nom) return err.textContent = "Donner un nom à la compagnie.";
-    if (id.length < 2 || RESERVES.includes(id)) return err.textContent = "Nom impossible : en choisir un autre.";
+    if (id.length < 2 || reserve(id)) return err.textContent = "Nom impossible : en choisir un autre.";
     if (id in UNITES && !UNITES[id].retiree) return err.textContent = `${NOM[id]} existe déjà.`;
     if (!unitesRef) return err.textContent = "Base non configurée.";
     const u = { nom: nom.charAt(0).toUpperCase() + nom.slice(1), type: brouillonCie.type, couleur: brouillonCie.couleur, retiree: false, cree_le: UNITES[id]?.cree_le || new Date().toISOString() };
@@ -906,6 +938,9 @@ function ecranPartage(apres) {
   $("#poste").textContent = "Partage";
   const main = $("#principal"); main.className = "";
   const cibles = [["s4", "S4"], ["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
+  const qrSection = ([k, s]) => `<div class="qr" id="qr-${k}">${symPoste(k, 30)}<canvas data-qr="${k}" aria-label="QR code ${esc(s.nom)}"></canvas><b>${esc(s.nom)}</b>
+      <small class="doux">${s.parent ? "Groupe de KILO" : "Section du TC2"}</small>
+      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button></div>`;
   main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
     <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Il contient le code d'accès <b class="code">${esc(code)}</b> : ne le montre qu'aux tiens. Si un code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
     ${estAdmin() ? `<div id="zone-cie">${apres?.form ? formCie() : `<button type="button" class="plein" id="nouvelle-cie">+ Nouvelle compagnie</button>`}</div>` : ""}
@@ -913,6 +948,9 @@ function ecranPartage(apres) {
       ${k in UNITES && UNITES[k].type ? `<small class="doux">${esc(NOM_TYPE[UNITES[k].type] || "")}</small>` : ""}
       <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button>
       ${estAdmin() && k in UNITES && !(k in DE_BASE) ? `<button type="button" class="ko" data-retire="${k}">Retirer</button>` : ""}</div>`).join("")}</div>
+    <h2>Sections et groupes du TC2</h2>
+    <p class="note">Le TC2 affecte chaque ordre du S4 à une section (ou à un groupe KILO). La section ne voit que ses ordres et les exécute ; KILO répartit aussi entre KILO 1 à 5.</p>
+    <div class="qr-grille">${Object.entries(SECTIONS).map(qrSection).join("")}</div>
     <p class="note" id="qr-erreur"></p>
     <div class="actions"><button type="button" data-poste="${esc(local.lire("poste", "") || "")}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div>
     <h2>Mode administrateur</h2>
@@ -968,9 +1006,11 @@ document.addEventListener("click", async e => {
   if (act === "FERMER") { panneau = null; b.blur(); return rafraichir(); }
   if (!d) return;
   if (act === "ACCEPTER") return transition(d, "PREPARATION");
+  if (act === "AFFECTER") { const v = d.affecte === b.dataset.v ? (poste === "tc2-kilo" ? "tc2-kilo" : null) : b.dataset.v; // retoucher la section choisie la retire
+    return transition(d, d.statut, { affecte: v, note: v ? `Affectée à ${SECTIONS[v].nom}` : "Affectation retirée" }); }
   if (act === "VALIDER") return transition(d, "EMISE", { ordre: { le: new Date().toISOString(), par: "S4" }, retour: null, note: "Validée par le S4" });
   if (act === "MODIFIER" || act === "REFUSER" || act === "SIGNALER") { panneau = { id: d.id, mode: { REFUSER: "REF", SIGNALER: "IMP" }[act] || "MOD" }; b.blur(); return rafraichir(); }
-  if (act === "IMPOSSIBLE") { panneau = null; return transition(d, "EMISE", { ordre: null, retour: { motif: b.dataset.v, le: new Date().toISOString() }, motif: "Impossible : " + b.dataset.v }); }
+  if (act === "IMPOSSIBLE") { panneau = null; return transition(d, "EMISE", { ordre: null, affecte: null, retour: { motif: b.dataset.v, le: new Date().toISOString() }, motif: "Impossible : " + b.dataset.v }); }
   if (act === "MOTIF") { panneau = null; return transition(d, "REFUSEE", { motif: b.dataset.v }); }
   if (act === "VALIDER_MODIF") {
     const ch = $("#m-creneau .choisi");
