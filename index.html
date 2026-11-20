@@ -308,7 +308,7 @@ const concerne = (d, p = poste) => !estSection(p) || d.affecte === p || SECTIONS
 const nomAffecte = d => SECTIONS[d.affecte]?.nom || "";
 // Mode administrateur : seul l'appareil où le code administrateur a été saisi peut changer de poste.
 // Seule l'empreinte SHA-256 du code figure ici, jamais le code lui-même.
-const ADMIN_EMPREINTE = "a3a63d1995c31e2f83b139eb3ffdb20a34f232990df7a7f05d0930e16aeda040";
+const ADMIN_EMPREINTE = "fb90716a04784b320675252a1bd94a1a3ac591af65b9dd746908f9a5e7000e39";
 const estAdmin = () => local.lire("admin", "") === ADMIN_EMPREINTE;
 async function empreinte(t) { const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, "0")).join(""); }
 const estCentre = p => p in CENTRES || estSection(p);
@@ -1078,7 +1078,7 @@ function ecranPartage(apres) {
   brancherCie();
   const fa = $("#form-admin");
   if (fa) fa.onsubmit = async e => { e.preventDefault();
-    try { const h = await empreinte($("#admin-code").value.trim().toUpperCase());
+    try { const h = await empreinte($("#admin-code").value.toUpperCase().replace(/[^A-Z0-9]/g, ""));
       if (h !== ADMIN_EMPREINTE) { $("#admin-erreur").textContent = "Code incorrect."; return; }
       local.ecrire("admin", h); ecranPartage(); } catch { $("#admin-erreur").textContent = "Impossible de vérifier le code ici."; } };
   let ok = true;
