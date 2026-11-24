@@ -294,7 +294,7 @@
     else carte.setView([46.6, 2.4], 6);
     if (!actuel) localiser(!vue);
     carte.on("move", lecture); lecture();
-    appuiLong($("#c-map"));
+    appuiLong($("#c-map"), (x, y) => { if (!carte) return; const ll = carte.containerPointToLatLng([x, y]); poser(ll.lat, ll.lng); });
   }
   function choisirFond(k) {
     const F = FONDS[k] || FONDS.plan; memo.ecrire("carto.fond", k in FONDS ? k : "plan");
@@ -329,17 +329,17 @@
     setTimeout(() => { if ($("#carto")) fermer(); }, 900);
   }
   // Appui long maison (identique sur iOS et Android) : 600 ms sans bouger, un seul doigt
-  function appuiLong(el) {
+  // surPoint(x, y) reçoit le point touché, relatif à l'élément. L'anneau de progression est le .c-anneau voisin.
+  function appuiLong(el, surPoint) {
     let t = null, x0 = 0, y0 = 0, doigts = 0;
-    const anneau = $("#c-anneau");
+    const anneau = el.parentElement?.querySelector(".c-anneau");
     const stop = () => { clearTimeout(t); t = null; anneau?.classList.remove("actif"); };
     el.addEventListener("pointerdown", e => {
       doigts++; if (doigts > 1 || (e.pointerType === "mouse" && e.button !== 0)) return stop();
       x0 = e.clientX; y0 = e.clientY; stop();
       const r = el.getBoundingClientRect();
       if (anneau) { anneau.style.left = (x0 - r.left) + "px"; anneau.style.top = (y0 - r.top) + "px"; void anneau.offsetWidth; anneau.classList.add("actif"); }
-      t = setTimeout(() => { t = null; anneau?.classList.remove("actif"); if (!carte) return;
-        const ll = carte.containerPointToLatLng([x0 - r.left, y0 - r.top]); poser(ll.lat, ll.lng); }, 600);
+      t = setTimeout(() => { t = null; anneau?.classList.remove("actif"); surPoint(x0 - r.left, y0 - r.top); }, 600);
     });
     el.addEventListener("pointermove", e => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) stop(); });
     const fin = () => { doigts = Math.max(0, doigts - 1); stop(); };
@@ -360,6 +360,8 @@
   addEventListener("keydown", e => { if (e.key === "Escape" && Carto.ouverte) fermer(); });
   preparer();
 
+  // Pour la carte de situation (index.html)
+  Object.assign(Carto, { chargerLeaflet, appuiLong, FONDS });
   Carto.ouvrir = i => { champ = i; ouvrirSelonOutil(); };
   Carto.choisirOutil = () => ecranChoix(() => fermer());
   window.Carto = Carto;
