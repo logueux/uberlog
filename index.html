@@ -230,7 +230,37 @@
   .barre-form small { color: var(--sur); }
   .vide, .unite-tete { border-color: color-mix(in srgb, var(--sur) 45%, transparent); }
   .legende i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.55); margin-right: 5px; vertical-align: -1px; }
-  @media (max-width: 440px) { h1 { display: none; } }
+  /* Carte de situation : sous le bandeau du haut, plein écran */
+  #situation { position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 8; display: flex; flex-direction: column; background: var(--fond); }
+  #situation .s-fond { flex: 1; min-height: 0; position: relative; }
+  #s-map { position: absolute; inset: 0; background: #20261a; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #situation:not(.placement) .c-croix, #situation:not(.placement) .c-anneau { display: none; }
+  .s-outils { position: absolute; z-index: 700; top: 10px; right: max(10px, env(safe-area-inset-right, 0px)); display: grid; gap: 6px; }
+  .s-outils button { min-height: 42px; min-width: 52px; padding: 6px 8px; font-size: 12px; background: rgba(26,32,18,.92); border-color: var(--kaki); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  .s-pied { background: var(--carte); border-top: 2px solid var(--kaki); display: grid; gap: 8px; max-height: 45vh; overflow-y: auto;
+    padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+  .s-pied p { margin: 0; } .s-pied .erreur:empty { display: none; } .s-pied .legende { color: var(--doux); }
+  .s-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .s-ligne b { font-family: var(--f-code); } .s-quoi { font: 700 16px/1.1 var(--f-titre) !important; letter-spacing: .08em; text-transform: uppercase; color: var(--kaki); }
+  .s-choix { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .s-choix button { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; text-align: left; }
+  .s-choix small { color: var(--orange); font-size: 10px; }
+  .s-ic { background: none; border: 0; }
+  .s-tc { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 1px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
+  .s-tc span, .s-plot b { font: 700 11px/1 var(--f-titre); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; padding: 2px 4px; border-radius: 3px; background: rgba(16,20,9,.85); color: #fff; }
+  .s-plot { --c: var(--neutre); position: absolute; left: -12px; top: -39px; display: flex; align-items: flex-start; gap: 3px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
+  .s-plot.ORDRE { --c: var(--kaki); } .s-plot.PREPARATION { --c: var(--jaune); } .s-plot.EN_ROUTE { --c: var(--orange); }
+  .s-plot b { background: var(--c); color: #0d1108; margin-top: 3px; padding: 3px 5px; }
+  .s-plot.URGENTE b { box-shadow: 0 0 0 2px var(--rouge); }
+  .s-popup .leaflet-popup-content-wrapper, .s-popup .leaflet-popup-tip { background: var(--carte); color: var(--texte); border: 1px solid var(--bord); }
+  .s-popup .leaflet-popup-content { margin: 10px 12px; font: 500 14px/1.35 var(--f-titre); min-width: 190px; }
+  .s-popup a.leaflet-popup-close-button { color: var(--doux); }
+  .s-pop { display: grid; gap: 5px; } .s-pop .code { font-family: var(--f-code); font-size: 13px; } .s-pop .type { font-size: 18px; }
+  .s-pop button { margin-top: 4px; min-height: 42px; }
+  .s-etat { --c: var(--neutre); font: 700 12px/1 var(--f-titre); letter-spacing: .08em; text-transform: uppercase; color: var(--c); }
+  .s-etat.ORDRE { --c: var(--kaki); } .s-etat.PREPARATION { --c: var(--jaune); } .s-etat.EN_ROUTE { --c: var(--orange); }
+  @media (max-width: 440px) { h1 { display: none; } .barre { gap: 6px; } .icone { padding: 6px 7px; font-size: 11px; letter-spacing: .02em; }
+    #etat { font-size: 10px; letter-spacing: 0; } #poste { font-size: 16px; min-width: 3.2em; } }
   @media (max-width: 380px) { .gros button { font-size: 22px; min-height: 80px; } .article { grid-template-columns: 30px minmax(0, 1fr) 88px; } }
 </style>
 </head>
@@ -242,6 +272,7 @@
     <a id="poste" href="#postes">—</a>
     <span id="etat">CONNEXION</span>
     <button class="icone" id="btn-alertes" type="button" aria-label="Activer les alertes">ALERTES</button>
+    <button class="icone" id="btn-carte" type="button" hidden>CARTE</button>
     <button class="icone" id="btn-partage" type="button">QR</button>
   </div>
 </header>
@@ -342,15 +373,21 @@ const local = {
   ecrire(k, v) { try { localStorage.setItem("uberlog." + k, JSON.stringify(v)); } catch {} },
 };
 const parametres = new URLSearchParams(location.search);
-if (parametres.get("k")) local.ecrire("code", parametres.get("k").trim().toUpperCase());
+// QR d'une compagnie : ?c=<clé de la compagnie>. Elle ne reçoit jamais le code du réseau (réservé au S4, au TC2 et à ses sections) :
+// la base ne lui ouvre que son propre espace (cies/<clé>) : ses demandes, sa position TC1 et la position du TC2.
+const compagnieVerrouillee = () => !estAdmin() && local.lire("cle", "") && local.lire("verrou", "");
+if (parametres.get("c") && !(estAdmin() && local.lire("code", ""))) { local.ecrire("cle", parametres.get("c").trim().toUpperCase()); local.ecrire("code", ""); }
+else if (parametres.get("k") && !compagnieVerrouillee()) { local.ecrire("code", parametres.get("k").trim().toUpperCase()); local.ecrire("cle", ""); }
 if (parametres.get("p") && !location.hash) history.replaceState(null, "", location.pathname + location.search + "#" + parametres.get("p"));
 // L'adresse porte le code et le poste : l'icône posée sur l'écran d'accueil les reprend
 function majAdresse() {
-  const q = new URLSearchParams(); const c = local.lire("code", ""), p = location.hash.slice(1);
-  if (c) q.set("k", c); if (p) q.set("p", p);
+  const q = new URLSearchParams(); const c = local.lire("code", ""), k = local.lire("cle", ""), p = location.hash.slice(1);
+  if (c) q.set("k", c); else if (k) q.set("c", k); if (p) q.set("p", p);
   const s = q.toString(); history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + location.hash);
 }
-let code = local.lire("code", "");
+let code = local.lire("code", ""), cleCie = code ? "" : local.lire("cle", "");
+// Espaces des compagnies : clé par compagnie (cles), fiche cies/<clé> (nom, type, couleur, positions TC1 et TC2), demandes par source
+let cles = {}, clesLues = false, ciesDocs = {}, abosCies = {}, demandesPar = {}, attentePar = {}, posTc2Ref = null, positionTc2 = null, desabonnerAutres = [];
 let messagesRef = null, desabonnerMessages = null, messages = [], messagesConnus = null;
 let collection = null, unitesRef = null, desabonnerUnites = null, demandes = {}, attente = new Set(), liaison = "connexion", desabonner = null;
 const configOk = FIREBASE.apiKey && FIREBASE.apiKey !== "A_REMPLACER" && FIREBASE.projectId;
@@ -373,9 +410,12 @@ function brancherBase() {
   messages = []; messagesRef = null; messagesConnus = null;
   if (desabonnerPage) { desabonnerPage(); desabonnerPage = null; } pageRef = null; pageOrdres = null; pageConnue = null;
   demandes = {}; attente = new Set(); collection = null; unitesRef = null; statutsConnus = null; majUnites([]);
-  if (!fs || !code) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
-  collection = fs.collection("postes").doc(code).collection("demandes");
+  desabonnerAutres.forEach(f => f()); desabonnerAutres = []; Object.values(abosCies).forEach(l => l.forEach(f => f())); abosCies = {};
+  cles = {}; clesLues = false; ciesDocs = {}; demandesPar = {}; attentePar = {}; posTc2Ref = null; positionTc2 = null;
+  if (!fs || (!code && !cleCie)) { liaison = fs ? "connexion" : "absent"; majEtat(); return; }
   liaison = "connexion"; majEtat();
+  if (!code) { suivreCie(cleCie); return; } // compagnie : son espace seulement
+  collection = fs.collection("postes").doc(code).collection("demandes");
   unitesRef = fs.collection("postes").doc(code).collection("unites");
   // Messagerie et ordres écrits du TC2 et de ses sections (les 300 derniers)
   messagesRef = fs.collection("postes").doc(code).collection("messages");
@@ -391,18 +431,112 @@ function brancherBase() {
     else if (!poste) ouvrir(); // liste des postes, ou lien d'une compagnie qui vient d'arriver
     else rafraichir();
   }, () => {});
-  desabonner = collection.onSnapshot({ includeMetadataChanges: true }, snap => {
-    demandes = {}; attente = new Set();
-    snap.forEach(d => { demandes[d.id] = d.data(); if (d.metadata.hasPendingWrites) attente.add(d.id); });
-    detecterAlertes();
-    liaison = snap.metadata.fromCache ? "ko" : "ok";
-    majEtat(); rafraichir();
-  }, e => { liaison = "absent"; majEtat(); alerte(e?.code === "permission-denied" ? "Accès refusé par la base : vérifier le code." : "Base injoignable."); rafraichir(); });
+  desabonnerAutres.push(fs.collection("postes").doc(code).collection("cles").onSnapshot(snap => {
+    cles = {}; clesLues = true;
+    snap.forEach(d => { const k = d.data().cle; if (typeof k === "string" && k.length >= 20) cles[d.id] = k; });
+    Object.values(cles).forEach(suivreCie); fusionner();
+    if ($("#principal .qr-grille") && !$("#form-cie")) ecranPartage();
+    synchroPlusTard();
+  }, () => {}));
+  posTc2Ref = fs.collection("postes").doc(code).collection("positions").doc("tc2");
+  desabonnerAutres.push(posTc2Ref.onSnapshot(d => { positionTc2 = d.exists ? d.data() : null; majSituation(); synchroPlusTard(); }, () => {}));
+  // Anciennes demandes (avant les espaces de compagnie) : recopiées dans l'espace de chaque compagnie par le S4 / TC2
+  desabonner = collection.onSnapshot({ includeMetadataChanges: true }, snap => recevoir("ancien", snap),
+    e => { liaison = "absent"; majEtat(); alerte(e?.code === "permission-denied" ? "Accès refusé par la base : vérifier le code." : "Base injoignable."); rafraichir(); });
+}
+function suivreCie(k) {
+  if (!fs || !k || abosCies[k]) return;
+  const ref = fs.collection("cies").doc(k);
+  const refus = e => { if (code) return; liaison = "absent"; majEtat();
+    alerte(e?.code === "permission-denied" ? "Accès refusé par la base : demander un nouveau QR code au TC2." : "Base injoignable."); rafraichir(); };
+  abosCies[k] = [
+    ref.onSnapshot(d => { ciesDocs[k] = d.exists ? d.data() : null; if (!code) adopterCie(ciesDocs[k]); majSituation(); synchroPlusTard(); }, refus),
+    ref.collection("demandes").onSnapshot({ includeMetadataChanges: true }, snap => recevoir(k, snap), refus),
+  ];
+}
+// Compagnie : son identité (et, pour une compagnie créée, son nom, son type et sa couleur) vient de sa fiche
+function adopterCie(f) {
+  if (!f?.cie) return;
+  if (!(f.cie in DE_BASE) && f.couleur) majUnites([{ id: f.cie, nom: f.nom, type: f.type, couleur: f.couleur, cree_le: "" }]);
+  if (!estAdmin()) local.ecrire("verrou", f.cie);
+  if (poste !== f.cie) { if (location.hash !== "#" + f.cie) location.hash = f.cie; else ouvrir(); }
+}
+function recevoir(src, snap) {
+  const premiere = !(src in demandesPar), m = {}, a = new Set();
+  snap.forEach(d => { m[d.id] = d.data(); if (d.metadata.hasPendingWrites) a.add(d.id); });
+  demandesPar[src] = m; attentePar[src] = a;
+  fusionner();
+  // premier chargement d'un espace : ce n'est pas du nouveau, pas d'alerte
+  if (premiere && statutsConnus) for (const [id, d] of Object.entries(m)) if (!(id in statutsConnus)) statutsConnus[id] = concerne(d) ? cle(d) : "HORS";
+  detecterAlertes();
+  liaison = snap.metadata.fromCache ? "ko" : "ok";
+  majEtat(); rafraichir(); synchroPlusTard();
+}
+function fusionner() {
+  demandes = {}; attente = new Set();
+  for (const s of ["ancien", ...Object.keys(demandesPar).filter(s => s !== "ancien")])
+    for (const [id, d] of Object.entries(demandesPar[s] || {})) { demandes[id] = d; if (attentePar[s]?.has(id)) attente.add(id); else attente.delete(id); }
+}
+// Où ranger une demande : l'espace de sa compagnie (ancienne collection tant que la compagnie n'a pas de clé)
+const refDemandes = cie => !fs ? null : !code ? (cleCie ? fs.collection("cies").doc(cleCie).collection("demandes") : null)
+  : cles[cie] ? fs.collection("cies").doc(cles[cie]).collection("demandes") : collection;
+// Clé d'une compagnie : créée une seule fois (transaction), avec la fiche de la compagnie
+async function assurerCle(cie) {
+  if (cles[cie]) return cles[cie];
+  const ref = fs.collection("postes").doc(code).collection("cles").doc(cie);
+  return fs.runTransaction(async t => {
+    const s = await t.get(ref);
+    if (s.exists) return s.data().cle;
+    const k = nouveauCode(), u = UNITES[cie] || {}, le = new Date().toISOString();
+    t.set(fs.collection("cies").doc(k), { cie, nom: u.nom || cie, type: u.type || "", couleur: u.couleur || "", maj_le: le });
+    t.set(ref, { cle: k, cree_le: le });
+    return k;
+  });
+}
+let essaiCles = 0;
+async function creerClesManquantes() {
+  if (!code || !fs || !clesLues || !navigator.onLine || Date.now() - essaiCles < 60000) return;
+  const manque = CIES.filter(c => !cles[c]); if (!manque.length) return;
+  essaiCles = Date.now();
+  for (const c of manque) { try { const k = await assurerCle(c); cles[c] = k; suivreCie(k); } catch { return; } }
+  if ($("#principal .qr-grille") && !$("#form-cie")) ecranPartage();
+}
+// Appareil d'une compagnie qui a encore le code du réseau (ancien QR) : il passe sur la clé de sa compagnie et oublie le code
+let essaiMigration = 0;
+function migrerCompagnie(cie) {
+  if (!code || estAdmin() || Date.now() - essaiMigration < 60000) return;
+  essaiMigration = Date.now();
+  assurerCle(cie).then(k => {
+    if (!k || estAdmin() || poste !== cie) return;
+    cleCie = k; code = ""; local.ecrire("cle", k); local.ecrire("code", ""); brancherBase(); ouvrir();
+  }).catch(() => {});
+}
+// S4 / TC2 : tient à jour la fiche de chaque compagnie (nom, type, couleur, position du TC2) et recopie les anciennes demandes
+let minuterieSynchro = null;
+const synchroniseur = () => code && (poste === "s4" || poste === "tc2");
+function synchroPlusTard() { if (!synchroniseur()) return; clearTimeout(minuterieSynchro); minuterieSynchro = setTimeout(synchroniser, 1500); }
+function synchroniser() {
+  if (!synchroniseur() || !fs) return;
+  creerClesManquantes();
+  for (const [c, k] of Object.entries(cles)) {
+    const f = ciesDocs[k]; if (!f) continue;
+    const u = UNITES[c] || {}, voulu = { nom: u.nom || c, type: u.type || "", couleur: u.couleur || "" }, maj = {};
+    for (const x in voulu) if (f[x] !== voulu[x]) maj[x] = voulu[x];
+    if (positionTc2 && f.tc2?.le !== positionTc2.le) maj.tc2 = positionTc2;
+    if (Object.keys(maj).length) fs.collection("cies").doc(k).update(maj).catch(() => {});
+  }
+  for (const [id, d] of Object.entries(demandesPar.ancien || {})) {
+    const k = cles[d.cie]; if (!k || !demandesPar[k] || !ciesDocs[k]) continue;
+    const copie = demandesPar[k][id];
+    if (!copie || String(copie.maj_le) < String(d.maj_le)) { const { migree, ...doc } = d; fs.collection("cies").doc(k).collection("demandes").doc(id).set(doc).catch(() => {}); }
+    if (!d.migree) collection.doc(id).update({ migree: true }).catch(() => {});
+  }
 }
 addEventListener("offline", () => { liaison = "ko"; majEtat(); });
 async function ecrire(doc) {
-  if (!collection) return alerte("Base non configurée.");
-  try { await collection.doc(doc.id).set(doc); }
+  const ref = refDemandes(doc.cie);
+  if (!ref) return alerte("Base non configurée.");
+  try { await ref.doc(doc.id).set(doc); }
   catch (e) { alerte(e?.code === "permission-denied" ? "Envoi refusé par la base : vérifier le code d'accès." : "Envoi impossible : " + (e?.message || e)); }
 }
 // ---------- Alertes : son, vibration, notification, bandeau ----------
@@ -752,6 +886,7 @@ function brancherMessages() {
 // ---------- Écrans ----------
 let poste = null, filtreTc2 = "ACTIFS", type = "RAV", prio = "ROUTINE", creneau = "", vueTc1 = "accueil", dernierPoste = null;
 function rafraichir() {
+  majSituation();
   const liste = $("#liste"); if (!liste) return;
   if (panneau && (window.Carto?.ouverte || liste.contains(document.activeElement) && document.activeElement.tagName === "INPUT")) return;
   let tab = Object.values(tout());
@@ -904,8 +1039,10 @@ async function scanner() {
       const r = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
       if (r?.data) {
         try {
-          const u = new URL(r.data), k = u.searchParams.get("k"), pp = u.searchParams.get("p") || u.hash.slice(1);
-          if (k) { fermer(); code = k.trim().toUpperCase(); local.ecrire("code", code); brancherBase();
+          const u = new URL(r.data), k = u.searchParams.get("k"), kc = u.searchParams.get("c"), pp = u.searchParams.get("p") || u.hash.slice(1);
+          if (kc) { fermer(); cleCie = kc.trim().toUpperCase(); code = ""; local.ecrire("cle", cleCie); local.ecrire("code", ""); brancherBase();
+                    history.replaceState(null, "", location.pathname + location.search + (pp ? "#" + pp : "")); ouvrir(); return; }
+          if (k) { fermer(); code = k.trim().toUpperCase(); cleCie = ""; local.ecrire("code", code); local.ecrire("cle", ""); brancherBase();
                    history.replaceState(null, "", location.pathname + location.search + (pp ? "#" + pp : "")); ouvrir(); return; }
         } catch {}
         ecran.querySelector("#l-info").textContent = "Ce QR code n'est pas un code UBERLOG.";
@@ -923,19 +1060,20 @@ function brancherAcces() {
   const f = $("#form-code"); if (!f) return;
   f.onsubmit = e => { e.preventDefault(); const v = $("#c-code").value.trim().toUpperCase();
     if (v.replace(/-/g, "").length < 16) return $("#erreur").textContent = "Code trop court : 20 caractères attendus.";
-    code = v; local.ecrire("code", code); brancherBase(); ouvrir(); };
+    code = v; cleCie = ""; local.ecrire("code", code); local.ecrire("cle", ""); brancherBase(); ouvrir(); };
   $("#c-scanner").onclick = scanner;
   $("#c-nouveau").onclick = () => { $("#c-code").value = nouveauCode(); $("#c-alerte").hidden = false; };
 }
 
 function ouvrir() {
   majAdresse();
-  if (!configOk || !code) { const main = $("#principal"); main.className = ""; main.innerHTML = ecranAcces(); brancherAcces(); return; }
+  if (!configOk || (!code && !cleCie)) { if (Sit.ouverte) fermerSituation(true); const main = $("#principal"); main.className = ""; main.innerHTML = ecranAcces(); brancherAcces(); return; }
   // Unité verrouillée : une fois le profil créé, l'appareil reste sur son poste
   const verrou = estAdmin() ? "" : local.lire("verrou", "");
   if (verrou && location.hash !== "#" + verrou) history.replaceState(null, "", location.pathname + location.search + "#" + verrou);
   const h = location.hash.slice(1);
   poste = h in UNITES || estCentre(h) ? h : null;
+  if (!code && estCentre(poste)) poste = null; // une clé de compagnie n'ouvre que sa compagnie
   if (poste) { local.ecrire("poste", poste); if (!verrou && !estAdmin()) local.ecrire("verrou", poste); majAdresse(); }
   if (poste) document.body.dataset.profil = poste; else delete document.body.dataset.profil;
   const perso = poste && !(poste in DE_BASE) && UNITES[poste]?.couleur; // fond des compagnies créées : leur couleur assombrie
@@ -945,10 +1083,14 @@ function ouvrir() {
   panneau = null;
   const main = $("#principal");
   main.className = estCentre(poste) ? "tc2" : poste ? "tc1" : "";
-  main.innerHTML = !poste ? ecranPostes() : estCentre(poste) ? ecranTc2() : ecranTc1();
+  main.innerHTML = !poste ? (code ? ecranPostes() : `<section><p class="vide">Chargement de la compagnie…</p></section>`) : estCentre(poste) ? ecranTc2() : ecranTc1();
+  if (!poste && Sit.ouverte) fermerSituation(true);
+  majBoutonCarte();
   if (poste && !estCentre(poste) && vueTc1 === "form") brancherTc1();
   if (familleTc2(poste)) { brancherMessages(); rafraichirMessages(); }
   rafraichir();
+  if (poste && !estCentre(poste)) migrerCompagnie(poste);
+  synchroPlusTard();
 }
 
 function brancherTc1() {
@@ -1051,19 +1193,36 @@ function brancherCie() {
     $("#qr-" + id)?.scrollIntoView({ block: "center", behavior: "smooth" });
   };
 }
+// Lien d'un poste : code du réseau pour le S4, le TC2 et ses sections ; clé de la compagnie pour une compagnie
+const lienPoste = k => !code ? `${LIEN}?c=${encodeURIComponent(cleCie)}&p=${k}`
+  : !estCentre(k) && cles[k] ? `${LIEN}?c=${encodeURIComponent(cles[k])}&p=${k}` : `${LIEN}?k=${encodeURIComponent(code)}&p=${k}`;
 function ecranPartage(apres) {
   $("#poste").textContent = "Partage";
+  if (Sit.ouverte) fermerSituation();
   const main = $("#principal"); main.className = "";
+  if (!code) { // appareil d'une compagnie : seulement son propre QR code (pour équiper un autre appareil de la compagnie)
+    const c = poste || local.lire("verrou", "");
+    main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
+      <p class="note">Ce QR code ouvre ${esc(NOM[c] || c)} sur un autre appareil. Il ne donne accès qu'aux demandes et à la position de ${esc(NOM[c] || c)}, et à la position du TC2.</p>
+      <div class="qr-grille"><div class="qr">${symCie(c, 36)}<canvas data-qr="${esc(c)}" aria-label="QR code ${esc(NOM[c] || c)}"></canvas><b>${esc(NOM[c] || c)}</b>
+        <button type="button" data-copie="${lienPoste(c)}">Copier le lien</button></div></div>
+      <p class="note" id="qr-erreur"></p>
+      <div class="actions"><button type="button" data-poste="${esc(c)}">Retour</button><button type="button" class="ko" id="changer-code">Changer de code</button></div></section>`;
+    main.querySelectorAll("canvas[data-qr]").forEach(cv => { if (!dessinerQr(cv, lienPoste(cv.dataset.qr))) $("#qr-erreur").textContent = "Le QR code n'a pas pu se charger. Utilise « Copier le lien »."; });
+    return;
+  }
+  creerClesManquantes();
   const cibles = [["s4", "S4"], ["tc2", "TC2"], ...CIES.map(c => [c, NOM[c]])];
   const qrSection = ([k, s]) => `<div class="qr" id="qr-${k}">${symPoste(k, 30)}<canvas data-qr="${k}" aria-label="QR code ${esc(s.nom)}"></canvas><b>${esc(s.nom)}</b>
       <small class="doux">${s.parent ? "Groupe de KILO" : "Section du TC2"}</small>
-      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button></div>`;
+      <button type="button" data-copie="${lienPoste(k)}">Copier le lien</button></div>`;
   main.innerHTML = `<section><h2>Scanner pour ouvrir le poste</h2>
-    <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Il contient le code d'accès <b class="code">${esc(code)}</b> : ne le montre qu'aux tiens. Si un code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
+    <p class="note">Chaque QR code ouvre directement le bon poste, sans compte. Pour l'installer : sur iPhone, Partager › Sur l'écran d'accueil ; sur Android, menu › Installer l'application. Le QR code d'une compagnie ne contient que la clé de cette compagnie : elle ne voit que ses demandes, sa position TC1 et la position du TC2. Ceux du S4, du TC2 et des sections contiennent le code du réseau <b class="code">${esc(code)}</b>, qui ouvre tout : ne les montre pas aux compagnies. Si ce code a fuité, crée-en un nouveau : les demandes repartent de zéro.</p>
     ${estAdmin() ? `<div id="zone-cie">${apres?.form ? formCie() : `<button type="button" class="plein" id="nouvelle-cie">+ Nouvelle compagnie</button>`}</div>` : ""}
     <div class="qr-grille">${cibles.map(([k, t]) => `<div class="qr ${qrNeuf === k ? "neuve" : ""}" id="qr-${k}">${k in UNITES ? symCie(k, 36) : ""}<canvas data-qr="${k}" aria-label="QR code ${esc(t)}"></canvas><b>${esc(t)}</b>
       ${k in UNITES && UNITES[k].type ? `<small class="doux">${esc(NOM_TYPE[UNITES[k].type] || "")}</small>` : ""}
-      <button type="button" data-copie="${LIEN}?k=${encodeURIComponent(code)}&p=${k}">Copier le lien</button>
+      ${k in UNITES && !cles[k] ? `<small class="doux">Ancien QR : clé de compagnie en attente (liaison ou règles Firebase)</small>` : ""}
+      <button type="button" data-copie="${lienPoste(k)}">Copier le lien</button>
       ${estAdmin() && k in UNITES && !(k in DE_BASE) ? `<button type="button" class="ko" data-retire="${k}">Retirer</button>` : ""}</div>`).join("")}</div>
     <h2>Sections et groupes du TC2</h2>
     <p class="note">Le TC2 affecte chaque ordre du S4 à une section (ou à un groupe KILO). La section ne voit que ses ordres et les exécute ; KILO répartit aussi entre KILO 1 à 5.</p>
@@ -1082,8 +1241,168 @@ function ecranPartage(apres) {
       if (h !== ADMIN_EMPREINTE) { $("#admin-erreur").textContent = "Code incorrect."; return; }
       local.ecrire("admin", h); ecranPartage(); } catch { $("#admin-erreur").textContent = "Impossible de vérifier le code ici."; } };
   let ok = true;
-  main.querySelectorAll("canvas[data-qr]").forEach(cv => ok = dessinerQr(cv, `${LIEN}?k=${encodeURIComponent(code)}&p=${cv.dataset.qr}`) && ok);
+  main.querySelectorAll("canvas[data-qr]").forEach(cv => ok = dessinerQr(cv, lienPoste(cv.dataset.qr)) && ok);
   if (!ok) $("#qr-erreur").textContent = "Les QR codes n'ont pas pu se charger. Utilise « Copier le lien ».";
+}
+
+// ---------- Carte de situation : positions TC1 / TC2 et demandes en cours ----------
+// S4 et TC2 voient tout (les sections : leurs ordres) ; une compagnie voit ses demandes, son TC1 et le TC2.
+// Placer : S4 et TC2 placent le TC2 et tous les TC1 ; une compagnie place son TC1. Appui long sur la carte, ou la croix.
+const Sit = { ouverte: false, carte: null, fond: null, couche: null, moi: null, placer: null, cadre: false, choix: false };
+const peutPlacer = () => !poste ? [] : poste === "s4" || poste === "tc2" ? ["tc2", ...CIES] : estCentre(poste) ? [] : [poste];
+const posTc1 = c => { const k = code ? cles[c] : cleCie, f = ciesDocs[k]; return f && f.cie === c ? f.tc1 || null : null; };
+const posTc2 = () => code ? positionTc2 : ciesDocs[cleCie]?.tc2 || null;
+const coordDemande = d => window.Carto?.lire(d.modif?.plot?.coordonnees || d.plot?.coordonnees || "");
+const demandesCarte = () => Object.values(tout()).filter(d => !FINIS.includes(d.statut) && (estCentre(poste) ? concerne(d) : d.cie === poste));
+const nomCible = c => c === "tc2" ? "TC2" : `TC1 ${NOM[c] || c}`;
+function majBoutonCarte() { const b = $("#btn-carte"); if (!b) return; b.hidden = !poste; b.textContent = Sit.ouverte ? "LISTE" : "CARTE"; b.classList.toggle("actif", Sit.ouverte); }
+function placerSituation() { const h = $("header"), d = $("#situation"); if (h && d) d.style.top = Math.max(0, h.getBoundingClientRect().bottom) + "px"; Sit.carte?.invalidateSize(); }
+addEventListener("resize", placerSituation);
+async function ouvrirSituation() {
+  if (!poste || Sit.ouverte) return;
+  local.ecrire("vue.carte", "oui");
+  const d = document.createElement("div"); d.id = "situation";
+  d.innerHTML = `<div class="s-fond"><div id="s-map"></div><div class="c-croix" aria-hidden="true"></div><div class="c-anneau" aria-hidden="true"></div>
+      <div class="s-outils"><button type="button" data-s="fond" id="s-bfond">Plan</button><button type="button" data-s="moi" aria-label="Ma position">◎</button><button type="button" data-s="tout">Tout</button></div></div>
+    <div class="s-pied" id="s-pied"></div>`;
+  document.body.append(d); document.documentElement.style.overflow = "hidden";
+  Sit.ouverte = true; Sit.cadre = false; Sit.placer = null; Sit.choix = false;
+  placerSituation(); majBoutonCarte(); piedSituation();
+  d.onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const s = b.dataset.s;
+    if (s === "placer") { const p = peutPlacer(); if (p.length === 1) { Sit.placer = p[0]; Sit.choix = false; } else Sit.choix = !Sit.choix; return piedSituation(); }
+    if (b.dataset.cible) { Sit.placer = b.dataset.cible; Sit.choix = false; return piedSituation(); }
+    if (s === "annuler") { Sit.placer = null; Sit.choix = false; return piedSituation(); }
+    if (!Sit.carte) return;
+    if (s === "ici") { const c = Sit.carte.getCenter(); return poserPosition(c.lat, c.lng); }
+    if (s === "fond") { const ks = Object.keys(Carto.FONDS); fondSituation(ks[(ks.indexOf(local.lire("carto.fond", "plan")) + 1) % ks.length]); }
+    if (s === "moi") localiserSituation();
+    if (s === "tout") cadrerSituation(true);
+  };
+  try { await Carto.chargerLeaflet(); }
+  catch { const p = $("#s-pied"); if (p) p.insertAdjacentHTML("afterbegin", `<p class="erreur">Carte indisponible hors réseau (fond de carte non chargé).</p>`); return; }
+  if (!document.body.contains(d)) return;
+  Sit.carte = L.map("s-map", { zoomControl: false, attributionControl: true, tap: false, worldCopyJump: true });
+  L.control.scale({ imperial: false, position: "bottomleft" }).addTo(Sit.carte);
+  fondSituation(local.lire("carto.fond", "plan"));
+  Sit.couche = L.layerGroup().addTo(Sit.carte);
+  const vue = local.lire("situation.vue", null) || local.lire("carto.vue", null);
+  if (vue) Sit.carte.setView([vue.c.lat, vue.c.lng], vue.z); else Sit.carte.setView([46.6, 2.4], 6);
+  Carto.appuiLong($("#s-map"), (x, y) => { if (!Sit.placer || !Sit.carte) return; const ll = Sit.carte.containerPointToLatLng([x, y]); poserPosition(ll.lat, ll.lng); });
+  dessinerSituation();
+}
+function fermerSituation(garder) {
+  if (Sit.carte) { try { local.ecrire("situation.vue", { c: Sit.carte.getCenter(), z: Sit.carte.getZoom() }); Sit.carte.remove(); } catch {} }
+  Sit.carte = Sit.fond = Sit.couche = Sit.moi = null; Sit.ouverte = false; Sit.placer = null;
+  $("#situation")?.remove(); document.documentElement.style.overflow = "";
+  if (!garder) local.ecrire("vue.carte", "non");
+  majBoutonCarte();
+}
+function fondSituation(k) {
+  const F = Carto.FONDS[k] || Carto.FONDS.plan; local.ecrire("carto.fond", k in Carto.FONDS ? k : "plan");
+  if (Sit.fond) Sit.carte.removeLayer(Sit.fond);
+  Sit.fond = L.tileLayer(F.url, { maxZoom: F.max, maxNativeZoom: F.max, attribution: F.attr, subdomains: "abc", crossOrigin: true }).addTo(Sit.carte);
+  if (Sit.carte.getZoom() > F.max) Sit.carte.setZoom(F.max);
+  Sit.carte.setMaxZoom(F.max + 1);
+  const b = $("#s-bfond"); if (b) b.textContent = F.nom.replace(" IGN", "");
+}
+function localiserSituation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(p => {
+    if (!Sit.carte) return; const ll = [p.coords.latitude, p.coords.longitude];
+    if (Sit.moi) Sit.moi.setLatLng(ll); else Sit.moi = L.marker(ll, { icon: L.divIcon({ className: "", html: '<div class="c-moi"></div>', iconSize: [0, 0] }), interactive: false }).addTo(Sit.carte);
+    Sit.carte.setView(ll, Math.max(Sit.carte.getZoom(), 14));
+  }, () => { const e = $("#s-err"); if (e) e.textContent = "Position de l'appareil indisponible."; }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+function pointsSituation() {
+  const pts = [], p2 = posTc2(); if (p2) pts.push([p2.lat, p2.lon]);
+  (estCentre(poste) ? CIES : [poste]).forEach(c => { const p = posTc1(c); if (p) pts.push([p.lat, p.lon]); });
+  demandesCarte().forEach(d => { const ll = coordDemande(d); if (ll) pts.push([ll.lat, ll.lon]); });
+  return pts;
+}
+function cadrerSituation(force) {
+  const pts = pointsSituation(); if (!Sit.carte || !pts.length) return;
+  if (pts.length === 1) Sit.carte.setView(pts[0], Math.max(force ? 14 : Sit.carte.getZoom(), 13));
+  else Sit.carte.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 15 });
+}
+function majSituation() { if (Sit.ouverte) { if (Sit.carte) dessinerSituation(); else piedSituation(); } }
+function popupPosition(titre, p) {
+  return `<div class="s-pop"><b>${esc(titre)}</b><span class="code">${esc(p.coordonnees)}</span><span class="doux">Placé par ${esc(p.par)} · ${jhm(p.le)}</span></div>`;
+}
+function popupDemande(d) {
+  const m = d.modif?.plot ? d.modif : null, pl = m?.plot || d.plot || {};
+  return `<div class="s-pop"><div class="entete"><span class="type">${esc(d.type)}</span><span class="qui">${symCie(d.cie, 16)}${esc(NOM[d.cie] || d.cie)}</span>
+      ${d.priorite !== "ROUTINE" ? `<span class="prio ${esc(d.priorite)}">${esc(d.priorite)}</span>` : ""}</div>
+    <span class="s-etat ${esc(cle(d))}">${esc(d._attente ? "Non transmise" : libelle(d))}${nomAffecte(d) && estCentre(poste) ? ` · ${esc(nomAffecte(d))}` : ""}</span>
+    <span>${esc(resume(d))}</span>
+    <span class="doux">${esc(lieuNom(d))}${m ? " retenu" : ""} : ${esc(pl.nom)} <span class="code">${esc(pl.coordonnees)}</span> · ${esc(creneauTxt(m ? m.creneau : d.creneau))}</span>
+    <button type="button" class="plein" data-voir="${esc(d.id)}">Voir la demande</button></div>`;
+}
+function dessinerSituation() {
+  if (!Sit.carte || !Sit.couche) return;
+  const ouvert = []; Sit.couche.eachLayer(l => { if (l.isPopupOpen?.()) ouvert.push(l.options.cleSit); });
+  Sit.couche.clearLayers();
+  const pop = { className: "s-popup", maxWidth: 280, autoPanPadding: [20, 20] };
+  const marque = (ll, html, popup, cleSit, z) => {
+    const m = L.marker(ll, { icon: L.divIcon({ className: "s-ic", html, iconSize: [0, 0] }), zIndexOffset: z || 0, keyboard: false, cleSit });
+    m.bindPopup(popup, pop).addTo(Sit.couche); if (ouvert.includes(cleSit)) m.openPopup();
+  };
+  const p2 = posTc2();
+  if (p2) marque([p2.lat, p2.lon], `<div class="s-tc">${symbole("tc", "ami", 34, "TC2")}<span>TC2</span></div>`, popupPosition("TC2", p2), "tc2", 900);
+  (estCentre(poste) ? CIES : [poste]).forEach(c => { const p = posTc1(c);
+    if (p) marque([p.lat, p.lon], `<div class="s-tc">${symbole("tc", c, 30, "TC1")}<span>${esc(NOM[c] || c)}</span></div>`, popupPosition(nomCible(c), p), "tc1-" + c, 800); });
+  for (const d of demandesCarte()) {
+    const ll = coordDemande(d); if (!ll) continue;
+    marque([ll.lat, ll.lon], `<div class="s-plot ${esc(cle(d))} ${esc(d.priorite)}">${symPlot(d, 40)}<b>${esc(d.type)}${estCentre(poste) ? " " + esc(NOM[d.cie] || d.cie) : ""}</b></div>`, popupDemande(d), d.id, d.priorite === "URGENTE" ? 500 : 0);
+    if (d.statut === "EN_ROUTE" && p2) L.polyline([[p2.lat, p2.lon], [ll.lat, ll.lon]], { color: "#f08a24", weight: 3, dashArray: "8 7", interactive: false }).addTo(Sit.couche);
+  }
+  if (!Sit.cadre) { Sit.cadre = true; cadrerSituation(false); }
+  piedSituation();
+}
+function piedSituation() {
+  const el = $("#s-pied"); if (!el) return;
+  const fond = $("#situation"); fond?.classList.toggle("placement", !!Sit.placer);
+  const placer = peutPlacer();
+  if (Sit.placer) {
+    el.innerHTML = `<div class="s-ligne"><b class="s-quoi">Placer ${esc(nomCible(Sit.placer))}</b></div>
+      <p class="doux">Appui long sur l'emplacement, ou centrer la croix puis « Ici ».</p>
+      <div class="actions"><button type="button" data-s="annuler">Annuler</button><button type="button" class="ok" data-s="ici">Ici (croix)</button></div><p class="erreur" id="s-err" role="alert"></p>`;
+    return;
+  }
+  if (Sit.choix) {
+    el.innerHTML = `<div class="s-ligne"><b class="s-quoi">Placer…</b><button type="button" data-s="annuler">Fermer</button></div>
+      <div class="s-choix">${placer.map(c => `<button type="button" data-cible="${esc(c)}">${c === "tc2" ? symbole("tc", "ami", 22, "TC2") : symbole("tc", c, 22, "TC1")}${esc(nomCible(c))}${(c === "tc2" ? posTc2() : posTc1(c)) ? "" : " <small>non placé</small>"}</button>`).join("")}</div>`;
+    return;
+  }
+  const ds = demandesCarte(), sans = ds.filter(d => !coordDemande(d)).length;
+  const manque = placer.filter(c => !(c === "tc2" ? posTc2() : posTc1(c))).map(nomCible);
+  el.innerHTML = `<div class="s-ligne"><span>${ds.length ? `<b>${ds.length}</b> demande${ds.length > 1 ? "s" : ""} en cours${sans ? ` · ${sans} sans coordonnées` : ""}` : "Aucune demande en cours"}</span>
+      ${placer.length ? `<button type="button" class="plein" data-s="placer">Placer${placer.length === 1 ? " mon TC1" : ""}</button>` : ""}</div>
+    ${manque.length && manque.length <= 3 ? `<p class="doux">Non placé : ${esc(manque.join(", "))}</p>` : manque.length ? `<p class="doux">${manque.length} positions non placées</p>` : ""}
+    <div class="legende"><span><i style="background:var(--neutre)"></i>Émise</span><span><i style="background:var(--kaki)"></i>Validée S4</span><span><i style="background:var(--jaune)"></i>En préparation</span><span><i style="background:var(--orange)"></i>En livraison</span></div>
+    <p class="erreur" id="s-err" role="alert"></p>`;
+}
+function poserPosition(lat, lon) {
+  const cible = Sit.placer; if (!cible || !fs) return;
+  lon = ((lon + 540) % 360) - 180;
+  const pos = { coordonnees: Carto.versMgrs(lat, lon), lat, lon, le: new Date().toISOString(), par: nomPoste(poste) };
+  const err = e => { const x = $("#s-err") || $("#alerte"); if (x) x.textContent = e?.code === "permission-denied" ? "Refusé par la base : publier les nouvelles règles Firebase." : "Enregistrement impossible : " + (e?.message || e); };
+  if (cible === "tc2") {
+    if (!posTc2Ref) return; posTc2Ref.set(pos).catch(err); positionTc2 = pos; synchroPlusTard();
+  } else {
+    const k = code ? cles[cible] : cleCie;
+    if (!k || !ciesDocs[k]) { const x = $("#s-err"); if (x) x.textContent = "Compagnie pas encore enregistrée dans la base (liaison ou règles Firebase à publier)."; return; }
+    fs.collection("cies").doc(k).update({ tc1: pos }).catch(err); ciesDocs[k] = { ...ciesDocs[k], tc1: pos };
+  }
+  try { navigator.vibrate?.([30, 40, 60]); } catch {}
+  Sit.placer = null; dessinerSituation();
+}
+function voirDemande(id) {
+  fermerSituation(); ouverts.add(id);
+  if (estCentre(poste)) { ongletTc2 = "DEMANDES"; filtreTc2 = "ACTIFS"; } else vueTc1 = "accueil";
+  ouvrir();
+  document.querySelector(`[data-ouvre="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center" });
 }
 
 // ---------- Clics ----------
@@ -1091,14 +1410,16 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("button, a"); if (!b) return;
   if (b.id === "poste" || b.getAttribute?.("href") === "#postes") { e.preventDefault(); if (!estAdmin() && local.lire("verrou", "")) return ouvrir(); history.replaceState(null, "", location.pathname + location.search); ouvrir(); return; }
   if (b.id === "btn-alertes") return basculerAlertes();
-  if (b.id === "btn-partage") return code && configOk ? ecranPartage() : ouvrir();
+  if (b.id === "btn-partage") return (code || cleCie) && configOk ? ecranPartage() : ouvrir();
+  if (b.id === "btn-carte") return Sit.ouverte ? fermerSituation() : ouvrirSituation();
+  if (b.dataset.voir) return voirDemande(b.dataset.voir);
   if (b.id === "nouvelle-cie") { ecranPartage({ form: true }); $("#cie-nom")?.focus(); return; }
   if (b.dataset.retire) { const id = b.dataset.retire;
     if (!b.dataset.arme) { b.dataset.arme = "1"; b.textContent = "Confirmer le retrait"; return; }
     unitesRef?.doc(id).update({ retiree: true }).catch(() => alerte("Retrait impossible."));
     return; }
   if (b.id === "admin-quitter") { local.ecrire("admin", ""); if (poste) local.ecrire("verrou", poste); return ecranPartage(); }
-  if (b.id === "changer-code") { code = ""; local.ecrire("code", ""); brancherBase(); return ouvrir(); }
+  if (b.id === "changer-code") { code = ""; cleCie = ""; local.ecrire("code", ""); local.ecrire("cle", ""); brancherBase(); return ouvrir(); }
   if (b.dataset.choix) {
     $(".postes").querySelectorAll("button").forEach(x => x.classList.toggle("choisi", x === b)); b.blur();
     const nom = nomPoste(b.dataset.choix);
@@ -1148,9 +1469,10 @@ document.addEventListener("click", async e => {
 addEventListener("hashchange", ouvrir);
 if (!location.hash) { const p = local.lire("poste", ""); if (p) history.replaceState(null, "", "#" + p); }
 brancherBase(); ouvrir(); majEtat();
+if (poste && local.lire("vue.carte", "") === "oui") ouvrirSituation(); // la carte reste l'écran principal si on l'a laissée ouverte
 if ("serviceWorker" in navigator && window.isSecureContext) {
   let rechargee = false;
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !window.Carto?.ouverte && !document.querySelector("form input:focus, form textarea:focus")) { rechargee = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!rechargee && !panneau && !Sit.placer && !window.Carto?.ouverte && !document.querySelector("form input:focus, form textarea:focus")) { rechargee = true; location.reload(); } });
   navigator.serviceWorker.register("sw.js").then(r => { setInterval(() => r.update().catch(() => {}), 30 * 60000); }).catch(() => {});
 }
 setInterval(() => { if (!panneau) rafraichir(); }, 30000);

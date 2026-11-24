@@ -1,33 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Tout est rangé sous un code d'accès secret : postes/<CODE>/...
-    // Sans le code, impossible de lister ou de lire quoi que ce soit (la liste des codes n'est pas lisible).
+    // Deux sortes de secrets, sans compte :
+    //  - le code du réseau (postes/<CODE>/...) : S4, TC2 et ses sections. Il ouvre tout.
+    //  - la clé d'une compagnie (cies/<CLÉ>/...) : la compagnie ne voit que son espace :
+    //    ses demandes, sa position TC1 et la copie de la position du TC2.
+    // Ni la liste des codes ni la liste des clés ne sont lisibles.
     function idCie(c) {
-      return c is string && c.matches('[a-z0-9-]{2,24}') && !(c in ['s4', 'tc2', 'postes', 'ami']);
+      return c is string && c.matches('[a-z0-9-]{2,24}') && !(c in ['s4', 'tc2', 'postes', 'ami']) && !c.matches('tc2-.*');
     }
+    function secret(k) { return k is string && k.size() >= 20; }
+    function demandeOk(d) {
+      return d.type in ['RAV', 'MEC', 'SAN'] && idCie(d.cie)
+        && d.statut in ['EMISE', 'PREPARATION', 'EN_ROUTE', 'LIVREE', 'REFUSEE', 'ANNULEE'];
+    }
+    function position(p) {
+      return p is map && p.keys().hasOnly(['coordonnees', 'lat', 'lon', 'le', 'par'])
+        && p.lat is number && p.lat >= -90 && p.lat <= 90 && p.lon is number && p.lon >= -180 && p.lon <= 180
+        && p.coordonnees is string && p.coordonnees.size() <= 40 && p.le is string && p.par is string && p.par.size() <= 30;
+    }
+    function fiche(f) {
+      return f.keys().hasOnly(['cie', 'nom', 'type', 'couleur', 'tc1', 'tc2', 'maj_le'])
+        && idCie(f.cie) && f.nom is string && f.nom.size() <= 24 && f.type is string && f.type.size() <= 20
+        && f.couleur is string && f.couleur.size() <= 7
+        && (!('tc1' in f) || position(f.tc1)) && (!('tc2' in f) || position(f.tc2));
+    }
+
+    // ---------- Réseau : S4, TC2 et sections ----------
+    // Anciennes demandes (avant les espaces de compagnie) : recopiées automatiquement par le S4 / TC2
     match /postes/{code}/demandes/{id} {
-      allow get, list: if code.size() >= 20;
-      allow create, update: if code.size() >= 20
-        && request.resource.data.type in ['RAV', 'MEC', 'SAN']
-        && idCie(request.resource.data.cie)
-        && request.resource.data.statut in ['EMISE', 'PREPARATION', 'EN_ROUTE', 'LIVREE', 'REFUSEE', 'ANNULEE'];
+      allow get, list: if secret(code);
+      allow create, update: if secret(code) && demandeOk(request.resource.data);
       allow delete: if false;
     }
     // Compagnies créées par l'administrateur (les 5 de base sont dans l'application)
     match /postes/{code}/unites/{cie} {
-      allow get, list: if code.size() >= 20;
-      allow create, update: if code.size() >= 20 && idCie(cie)
+      allow get, list: if secret(code);
+      allow create, update: if secret(code) && idCie(cie)
         && request.resource.data.nom is string && request.resource.data.nom.size() > 0 && request.resource.data.nom.size() <= 20
         && request.resource.data.type is string && request.resource.data.type.matches('[a-z_]{2,20}')
         && request.resource.data.couleur is string && request.resource.data.couleur.matches('#[0-9a-f]{6}')
         && request.resource.data.retiree is bool;
       allow delete: if false;
     }
+    // Clé secrète de chaque compagnie : créée une seule fois, jamais modifiée
+    match /postes/{code}/cles/{cie} {
+      allow get, list: if secret(code);
+      allow create: if secret(code) && idCie(cie)
+        && request.resource.data.keys().hasOnly(['cle', 'cree_le']) && secret(request.resource.data.cle);
+      allow update, delete: if false;
+    }
+    // Position du TC2 (recopiée dans l'espace de chaque compagnie)
+    match /postes/{code}/positions/{p} {
+      allow get, list: if secret(code);
+      allow create, update: if secret(code) && p == 'tc2' && position(request.resource.data);
+      allow delete: if false;
+    }
     // Messagerie du TC2 et de ses sections : on ajoute, on ne modifie ni n'efface
     match /postes/{code}/messages/{id} {
-      allow get, list: if code.size() >= 20;
-      allow create: if code.size() >= 20
+      allow get, list: if secret(code);
+      allow create: if secret(code)
         && request.resource.data.canal == 'chat'
         && request.resource.data.texte is string && request.resource.data.texte.size() > 0 && request.resource.data.texte.size() <= 2000
         && request.resource.data.de is string && request.resource.data.de.size() <= 24
@@ -37,13 +69,29 @@ service cloud.firestore {
     }
     // Page d'ordres du TC2 (un seul document : pages/ordres), modifiée par le TC2 et les chefs de section
     match /postes/{code}/pages/{page} {
-      allow get, list: if code.size() >= 20;
-      allow create, update: if code.size() >= 20 && page == 'ordres'
+      allow get, list: if secret(code);
+      allow create, update: if secret(code) && page == 'ordres'
         && request.resource.data.texte is string && request.resource.data.texte.size() <= 20000
         && request.resource.data.de in ['tc2', 'tc2-pelican', 'tc2-alpha', 'tc2-lima', 'tc2-kilo']
         && request.resource.data.nom is string && request.resource.data.nom.size() <= 30
         && request.resource.data.le is string;
       allow delete: if false;
+    }
+
+    // ---------- Espace d'une compagnie : cies/<clé> ----------
+    match /cies/{k} {
+      allow get: if secret(k);
+      allow list: if false;
+      allow create: if secret(k) && fiche(request.resource.data);
+      allow update: if secret(k) && request.resource.data.cie == resource.data.cie && fiche(request.resource.data);
+      allow delete: if false;
+      // Ses demandes : uniquement celles de cette compagnie
+      match /demandes/{id} {
+        allow get, list: if secret(k);
+        allow create, update: if secret(k) && demandeOk(request.resource.data)
+          && request.resource.data.cie == get(/databases/$(database)/documents/cies/$(k)).data.cie;
+        allow delete: if false;
+      }
     }
   }
 }
